@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Leave requests</h1>
+    <p class="muted">{{ employee.name }}</p>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.type_id.id }}">Leave type</label>
+      {{ form.type_id() }}
+      <label for="{{ form.date_from.id }}">From</label>
+      {{ form.date_from() }}
+      <label for="{{ form.date_to.id }}">To</label>
+      {{ form.date_to() }}
+      <label for="{{ form.minutes.id }}">Minutes</label>
+      {{ form.minutes() }}
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>History</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Created</th>
+          <th>Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave_request, leave_type in rows %}
+          <tr>
+            <td>{{ leave_request.created_at }}</td>
+            <td>{{ leave_type.code }}</td>
+            <td>{{ leave_request.date_from }}</td>
+            <td>{{ leave_request.date_to }}</td>
+            <td>{{ leave_request.status.value }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No requests yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

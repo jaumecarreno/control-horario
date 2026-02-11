@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Today</h1>
+    <p class="muted">{{ employee.name }}</p>
+    {% include "employee/_punch_state.html" %}
+  </section>
+{% endblock %}
+

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Team today</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Last event</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for employee, event in rows %}
+          <tr>
+            <td>{{ employee.name }}</td>
+            <td>{{ event.type.value if event else "-" }}</td>
+            <td>{{ event.ts if event else "-" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No employees found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

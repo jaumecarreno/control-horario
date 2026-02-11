@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Sign in</h1>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.email.id }}">Email</label>
+      {{ form.email() }}
+      <label for="{{ form.password.id }}">Password</label>
+      {{ form.password() }}
+      <div class="inline" style="margin: .6rem 0 1rem;">
+        {{ form.remember() }}
+        <span>Remember me</span>
+      </div>
+      {{ form.submit() }}
+    </form>
+  </section>
+{% endblock %}
+

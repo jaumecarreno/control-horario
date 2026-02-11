@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>My events</h1>
+    <p class="muted">{{ employee.name }}</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Type</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.ts }}</td>
+            <td>{{ event.type.value }}</td>
+            <td>{{ event.source.value }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No events yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

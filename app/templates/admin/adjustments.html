@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Adjustments (stub)</h1>
+    <p class="muted">Corrections endpoint reserved for future MVP iteration.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Created at</th>
+          <th>Employee</th>
+          <th>Minutes delta</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.created_at }}</td>
+            <td>{{ row.employee_id }}</td>
+            <td>{{ row.minutes_delta }}</td>
+            <td>{{ row.reason }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">No adjustments yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

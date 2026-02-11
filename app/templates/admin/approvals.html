@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Pending approvals</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Type</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leave_request, employee, leave_type in rows %}
+          <tr>
+            <td>{{ employee.name }}</td>
+            <td>{{ leave_type.code }}</td>
+            <td>{{ leave_request.date_from }}</td>
+            <td>{{ leave_request.date_to }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('admin.approval_approve', leave_request_id=leave_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit">Approve</button>
+              </form>
+              <form class="inline" method="post" action="{{ url_for('admin.approval_reject', leave_request_id=leave_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="danger">Reject</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No pending requests.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+

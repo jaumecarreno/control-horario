@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Payroll report (stub)</h1>
+    <p class="muted">Basic CSV export of time events in a date range.</p>
+    <form method="post" action="{{ url_for('admin.payroll_export') }}">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.date_from.id }}">From</label>
+      {{ form.date_from() }}
+      <label for="{{ form.date_to.id }}">To</label>
+      {{ form.date_to() }}
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+{% endblock %}
+

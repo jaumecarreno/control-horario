@@ -1,0 +1,39 @@
+<div id="kiosk-panel">
+  {% if employee %}
+    <p>Authenticated employee: <strong>{{ employee.name }}</strong></p>
+    <div class="actions">
+      {% for slug, label in [('in','Punch in'), ('out','Punch out'), ('break-start','Start break'), ('break-end','End break')] %}
+        <form
+          method="post"
+          action="{{ url_for('kiosk.kiosk_punch', action=slug) }}"
+          hx-post="{{ url_for('kiosk.kiosk_punch', action=slug) }}"
+          hx-target="#kiosk-panel"
+          hx-swap="outerHTML"
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit">{{ label }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p>Enter employee PIN</p>
+    {% if pin_error %}
+      <p class="flash danger">{{ pin_error }}</p>
+    {% endif %}
+    <form
+      method="post"
+      action="{{ url_for('kiosk.kiosk_auth_pin') }}"
+      hx-post="{{ url_for('kiosk.kiosk_auth_pin') }}"
+      hx-target="#kiosk-panel"
+      hx-swap="outerHTML"
+    >
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="pin">PIN</label>
+      <input id="pin" name="pin" type="password" minlength="4" maxlength="16" required>
+      <div style="margin-top: .8rem;">
+        <button type="submit">Authenticate</button>
+      </div>
+    </form>
+  {% endif %}
+</div>
+

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Create employee</h1>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.name.id }}">Name</label>
+      {{ form.name() }}
+      <label for="{{ form.email.id }}">Email (optional)</label>
+      {{ form.email() }}
+      <label for="{{ form.pin.id }}">PIN (optional)</label>
+      {{ form.pin() }}
+      <div class="inline" style="margin-top: .75rem;">
+        {{ form.active() }} <span>Active</span>
+      </div>
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+{% endblock %}
+

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Select tenant</h1>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.tenant_id.id }}">Tenant</label>
+      {{ form.tenant_id() }}
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+{% endblock %}
+

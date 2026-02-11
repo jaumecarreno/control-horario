@@ -1,0 +1,42 @@
+<div id="punch-state">
+  {% if last_event %}
+    <p>Last event: <strong>{{ last_event.type.value }}</strong> at {{ last_event.ts }}</p>
+  {% else %}
+    <p>No events yet today.</p>
+  {% endif %}
+  <div class="actions">
+    {% for action in available_actions %}
+      <form
+        method="post"
+        action="{{ url_for('employee.punch_action', action=action.slug) }}"
+        hx-post="{{ url_for('employee.punch_action', action=action.slug) }}"
+        hx-target="#punch-state"
+        hx-swap="outerHTML"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">{{ action.label }}</button>
+      </form>
+    {% endfor %}
+  </div>
+  {% if events %}
+    <table style="margin-top: 1rem;">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Type</th>
+          <th>Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+          <tr>
+            <td>{{ event.ts }}</td>
+            <td>{{ event.type.value }}</td>
+            <td>{{ event.source.value }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</div>
+

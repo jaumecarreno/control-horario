@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>Employees</h1>
+    <p><a href="{{ url_for('admin.employees_new') }}">Create employee</a></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for employee in employees %}
+          <tr>
+            <td>{{ employee.name }}</td>
+            <td>{{ employee.email or '-' }}</td>
+            <td>{{ "Yes" if employee.active else "No" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No employees found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
+
