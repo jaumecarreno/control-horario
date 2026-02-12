@@ -76,6 +76,20 @@ Gunicorn entrypoint:
 gunicorn -c gunicorn.conf.py wsgi:app
 ```
 
+Deployment quick check (inside the web container):
+
+```bash
+cd /app
+sh scripts/deploy_check.sh
+```
+
+Optional smoke checks against production URL:
+
+```bash
+cd /app
+APP_URL="https://fichar.bluetime.cloud" sh scripts/deploy_check.sh
+```
+
 ## RLS and tenant isolation
 
 - All tenant-scoped tables include `tenant_id`.
