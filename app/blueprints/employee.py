@@ -5,8 +5,9 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import select
 
@@ -34,10 +35,24 @@ PUNCH_BUTTONS = [
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
-    now = datetime.now(timezone.utc)
-    start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
-    end = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
-    return start, end
+    tz = _app_timezone()
+    now_local = datetime.now(tz)
+    start_local = datetime.combine(now_local.date(), time.min, tzinfo=tz)
+    end_local = datetime.combine(now_local.date(), time.max, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _app_timezone() -> ZoneInfo:
+    tz_name = current_app.config.get("APP_TIMEZONE", "Europe/Madrid")
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def _to_app_tz(ts: datetime) -> datetime:
+    aware_ts = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return aware_ts.astimezone(_app_timezone())
 
 
 def _employee_for_current_user() -> Employee:
@@ -84,20 +99,22 @@ def _recent_punches(events: list[TimeEvent]) -> list[dict[str, str]]:
     rows = []
     for event in reversed(events):
         is_manual = bool((event.meta_json or {}).get("manual"))
+        event_local_ts = _to_app_tz(event.ts)
         if event.type == TimeEventType.IN:
-            rows.append({"label": "Entrada", "ts": event.ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
+            rows.append({"label": "Entrada", "ts": event_local_ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
         elif event.type == TimeEventType.OUT:
-            rows.append({"label": "Salida", "ts": event.ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
+            rows.append({"label": "Salida", "ts": event_local_ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
         if len(rows) == 5:
             break
     return rows
 
 
 def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
-    start = datetime(year=year, month=month, day=1, tzinfo=timezone.utc)
+    tz = _app_timezone()
+    start = datetime(year=year, month=month, day=1, tzinfo=tz)
     days_in_month = monthrange(year, month)[1]
-    end = datetime(year=year, month=month, day=days_in_month, hour=23, minute=59, second=59, microsecond=999999, tzinfo=timezone.utc)
-    return start, end
+    end = datetime(year=year, month=month, day=days_in_month, hour=23, minute=59, second=59, microsecond=999999, tzinfo=tz)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
 def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool]:
@@ -122,7 +139,7 @@ def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool
         pair_has_manual = bool((open_entry.meta_json or {}).get("manual")) or bool((event.meta_json or {}).get("manual"))
         if pair_has_manual:
             includes_manual = True
-        pair_label = f"{open_entry.ts.strftime('%H:%M')} → {event.ts.strftime('%H:%M')}"
+        pair_label = f"{_to_app_tz(open_entry.ts).strftime('%H:%M')} → {_to_app_tz(event.ts).strftime('%H:%M')}"
         if pair_has_manual:
             pair_label += " (Manual)"
         entries_and_exits.append(pair_label)
@@ -146,7 +163,7 @@ def _daily_pause_minutes(events: list[TimeEvent]) -> tuple[int, list[str]]:
 
         delta = event.ts - open_pause.ts
         pause_minutes += max(0, int(delta.total_seconds() // 60))
-        pause_pairs.append(f"{open_pause.ts.strftime('%H:%M')} → {event.ts.strftime('%H:%M')}")
+        pause_pairs.append(f"{_to_app_tz(open_pause.ts).strftime('%H:%M')} → {_to_app_tz(event.ts).strftime('%H:%M')}")
         open_pause = None
 
     return pause_minutes, pause_pairs
@@ -339,7 +356,8 @@ def create_manual_punch():
         flash("Tipo de fichaje manual inválido.", "danger")
         return redirect(url_for("employee.me_today"))
 
-    event_ts = datetime.combine(event_date, time(hour=hour, minute=minute), tzinfo=timezone.utc)
+    event_local_ts = datetime.combine(event_date, time(hour=hour, minute=minute), tzinfo=_app_timezone())
+    event_ts = event_local_ts.astimezone(timezone.utc)
     event = TimeEvent(
         tenant_id=employee.tenant_id,
         employee_id=employee.id,
@@ -373,10 +391,11 @@ def presence_control():
         try:
             selected_year, selected_month = map(int, requested_month.split("-", 1))
         except ValueError:
-            selected_year = datetime.now(timezone.utc).year
-            selected_month = datetime.now(timezone.utc).month
+            now = datetime.now(_app_timezone())
+            selected_year = now.year
+            selected_month = now.month
     else:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_app_timezone())
         selected_year = now.year
         selected_month = now.month
 
@@ -389,7 +408,7 @@ def presence_control():
     month_events = list(db.session.execute(month_events_stmt).scalars().all())
     events_by_day: dict[date, list[TimeEvent]] = {}
     for event in month_events:
-        events_by_day.setdefault(event.ts.date(), []).append(event)
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
     month_rows = []
     month_worked = 0
@@ -427,6 +446,7 @@ def presence_control():
         month_expected=_minutes_to_hhmm(month_expected),
         month_balance=_minutes_to_hhmm(month_worked - month_expected),
         recent_events=recent_events,
+        to_app_tz=_to_app_tz,
         prev_month=prev_month,
         next_month=next_month,
         minutes_to_hhmm=_minutes_to_hhmm,
@@ -444,10 +464,11 @@ def pause_control():
         try:
             selected_year, selected_month = map(int, requested_month.split("-", 1))
         except ValueError:
-            selected_year = datetime.now(timezone.utc).year
-            selected_month = datetime.now(timezone.utc).month
+            now = datetime.now(_app_timezone())
+            selected_year = now.year
+            selected_month = now.month
     else:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(_app_timezone())
         selected_year = now.year
         selected_month = now.month
 
@@ -460,7 +481,7 @@ def pause_control():
     month_events = list(db.session.execute(month_events_stmt).scalars().all())
     events_by_day: dict[date, list[TimeEvent]] = {}
     for event in month_events:
-        events_by_day.setdefault(event.ts.date(), []).append(event)
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
     month_rows = []
     month_paused = 0
