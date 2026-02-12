@@ -73,7 +73,24 @@
       .kiosk-btn.in { background: #15803d; }
       .kiosk-btn.out { background: #b91c1c; }
       .kiosk-btn.is-dimmed { opacity: .55; }
-      .kiosk-icon { display: inline-block; min-width: 2rem; font-family: monospace; }
+      .kiosk-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .55rem;
+        padding: .72rem .95rem;
+        font-size: 1.08rem;
+      }
+      .kiosk-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .kiosk-icon svg {
+        width: 1.15rem;
+        height: 1.15rem;
+        stroke-width: 2.4;
+      }
       .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
       .status-pill.status-in { background: #15803d; }
       .status-pill.status-out { background: #b91c1c; }
@@ -110,4 +127,3 @@
     </main>
   </body>
 </html>
-
