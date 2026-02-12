@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import select
 
@@ -17,15 +19,19 @@ bp = Blueprint("kiosk", __name__)
 ACTION_MAP = {
     "in": TimeEventType.IN,
     "out": TimeEventType.OUT,
-    "break-start": TimeEventType.BREAK_START,
-    "break-end": TimeEventType.BREAK_END,
 }
 
 
 def _current_kiosk_employee() -> Employee | None:
-    employee_id = session.get("kiosk_employee_id")
-    if not employee_id:
+    raw_employee_id = session.get("kiosk_employee_id")
+    if not raw_employee_id:
         return None
+    try:
+        employee_id = uuid.UUID(str(raw_employee_id))
+    except ValueError:
+        session.pop("kiosk_employee_id", None)
+        return None
+
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
         return None
@@ -36,15 +42,44 @@ def _current_kiosk_employee() -> Employee | None:
     return employee
 
 
+def _kiosk_panel_context(employee: Employee | None) -> dict:
+    if employee is None:
+        return {"employee": None, "status": None, "recent_events": []}
+
+    recent_events = (
+        db.session.execute(
+            select(TimeEvent)
+            .where(
+                TimeEvent.employee_id == employee.id,
+                TimeEvent.type.in_((TimeEventType.IN, TimeEventType.OUT)),
+            )
+            .order_by(TimeEvent.ts.desc())
+            .limit(5)
+        )
+        .scalars()
+        .all()
+    )
+
+    status = "SALIDA"
+    if recent_events and recent_events[0].type == TimeEventType.IN:
+        status = "ENTRADA"
+
+    return {
+        "employee": employee,
+        "status": status,
+        "recent_events": recent_events,
+    }
+
+
 def _render_kiosk_panel(employee: Employee | None):
-    return render_template("kiosk/_panel.html", employee=employee)
+    return render_template("kiosk/_panel.html", **_kiosk_panel_context(employee))
 
 
 @bp.get("/kiosk")
 @tenant_required
 def kiosk_index():
     employee = _current_kiosk_employee()
-    return render_template("kiosk/index.html", employee=employee)
+    return render_template("kiosk/index.html", **_kiosk_panel_context(employee))
 
 
 @bp.post("/kiosk/auth-pin")
@@ -74,7 +109,7 @@ def kiosk_auth_pin():
 
     if employee is None:
         if request.headers.get("HX-Request") == "true":
-            return render_template("kiosk/_panel.html", employee=None, pin_error="Invalid PIN."), 401
+            return render_template("kiosk/_panel.html", pin_error="Invalid PIN.", **_kiosk_panel_context(None)), 401
         flash("Invalid PIN.", "danger")
         return redirect(url_for("kiosk.kiosk_index"))
 
