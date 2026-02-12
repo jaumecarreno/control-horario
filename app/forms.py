@@ -25,31 +25,8 @@ class EmployeeCreateForm(FlaskForm):
     name = StringField("Name", validators=[DataRequired(), Length(max=255)])
     email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
     pin = PasswordField("PIN", validators=[Optional(), Length(min=4, max=16)])
-    shift_id = SelectField("Shift", choices=[], validators=[Optional()], coerce=str)
     active = BooleanField("Active", default=True)
     submit = SubmitField("Create employee")
-
-
-class EmployeeEditForm(FlaskForm):
-    name = StringField("Name", validators=[DataRequired(), Length(max=255)])
-    email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
-    pin = PasswordField("PIN", validators=[Optional(), Length(min=4, max=16)])
-    shift_id = SelectField("Shift", choices=[], validators=[Optional()], coerce=str)
-    submit = SubmitField("Save changes")
-
-
-class ShiftForm(FlaskForm):
-    name = StringField("Shift name", validators=[DataRequired(), Length(max=255)])
-    break_counts_as_work = BooleanField("Break counts as work time", default=True)
-    break_minutes = IntegerField("Break minutes", validators=[DataRequired()])
-    expected_hours = IntegerField("Expected hours", validators=[DataRequired()])
-    expected_hours_period = SelectField(
-        "Period",
-        choices=[("ANNUAL", "Anuales"), ("MONTHLY", "Mensuales"), ("WEEKLY", "Semanales"), ("DAILY", "Diarias")],
-        validators=[DataRequired()],
-        coerce=str,
-    )
-    submit = SubmitField("Save shift")
 
 
 class LeaveRequestForm(FlaskForm):
@@ -72,3 +49,4 @@ class DateRangeExportForm(FlaskForm):
     def validate_date_to(self, field: DateField) -> None:
         if self.date_from.data and field.data and field.data < self.date_from.data:
             raise ValidationError("End date must be on or after start date.")
+
