@@ -131,6 +131,54 @@ def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool
     return worked_minutes, entries_and_exits, includes_manual
 
 
+def _daily_pause_minutes(events: list[TimeEvent]) -> tuple[int, list[str]]:
+    pause_minutes = 0
+    pause_pairs: list[str] = []
+    open_pause: TimeEvent | None = None
+
+    for event in events:
+        if event.type == TimeEventType.BREAK_START:
+            open_pause = event
+            continue
+
+        if event.type != TimeEventType.BREAK_END or open_pause is None:
+            continue
+
+        delta = event.ts - open_pause.ts
+        pause_minutes += max(0, int(delta.total_seconds() // 60))
+        pause_pairs.append(f"{open_pause.ts.strftime('%H:%M')} → {event.ts.strftime('%H:%M')}")
+        open_pause = None
+
+    return pause_minutes, pause_pairs
+
+
+def _pause_summary(events: list[TimeEvent]) -> tuple[bool, int, int]:
+    total_paused_seconds = 0
+    open_pause: TimeEvent | None = None
+
+    for event in events:
+        if event.type == TimeEventType.BREAK_START:
+            open_pause = event
+            continue
+
+        if event.type == TimeEventType.BREAK_END and open_pause is not None:
+            total_paused_seconds += max(0, int((event.ts - open_pause.ts).total_seconds()))
+            open_pause = None
+
+    if open_pause is None:
+        return False, 0, total_paused_seconds // 60
+
+    pause_start = open_pause.ts if open_pause.ts.tzinfo else open_pause.ts.replace(tzinfo=timezone.utc)
+    running_seconds = max(0, int((datetime.now(timezone.utc) - pause_start).total_seconds()))
+    total_paused_seconds += running_seconds
+    return True, running_seconds, total_paused_seconds // 60
+
+
+def _seconds_to_hhmmss(seconds: int) -> str:
+    total = max(0, seconds)
+    return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+
+
 def _minutes_to_hhmm(minutes: int) -> str:
     sign = "-" if minutes < 0 else ""
     total = abs(minutes)
@@ -140,6 +188,7 @@ def _minutes_to_hhmm(minutes: int) -> str:
 def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
+    pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     return render_template(
         "employee/_punch_state.html",
         employee=employee,
@@ -148,6 +197,9 @@ def _render_punch_state(employee: Employee):
         punch_buttons=PUNCH_BUTTONS,
         current_state=current_state,
         recent_punches=_recent_punches(events),
+        pause_active=pause_active,
+        running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
+        paused_today=_minutes_to_hhmm(paused_today_minutes),
     )
 
 
@@ -158,6 +210,7 @@ def me_today():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
+    pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     return render_template(
         "employee/today.html",
         employee=employee,
@@ -166,7 +219,42 @@ def me_today():
         punch_buttons=PUNCH_BUTTONS,
         current_state=current_state,
         recent_punches=_recent_punches(events),
+        pause_active=pause_active,
+        running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
+        paused_today=_minutes_to_hhmm(paused_today_minutes),
     )
+
+
+@bp.post("/me/pause/toggle")
+@login_required
+@tenant_required
+def toggle_pause():
+    employee = _employee_for_current_user()
+    events = _todays_events(employee.id)
+    pause_active, _, _ = _pause_summary(events)
+    event_type = TimeEventType.BREAK_END if pause_active else TimeEventType.BREAK_START
+
+    event = TimeEvent(
+        tenant_id=employee.tenant_id,
+        employee_id=employee.id,
+        type=event_type,
+        source=TimeEventSource.WEB,
+        meta_json={"via": "employee_pause_control"},
+    )
+    db.session.add(event)
+    db.session.flush()
+    log_audit(
+        action=f"PUNCH_{event_type.value}",
+        entity_type="time_events",
+        entity_id=event.id,
+        payload={"employee_id": str(employee.id), "source": "WEB"},
+    )
+    db.session.commit()
+
+    if request.headers.get("HX-Request") == "true":
+        return _render_punch_state(employee)
+
+    return redirect(url_for("employee.me_today"))
 
 
 @bp.post("/me/punch/<string:action>")
@@ -339,6 +427,72 @@ def presence_control():
         month_expected=_minutes_to_hhmm(month_expected),
         month_balance=_minutes_to_hhmm(month_worked - month_expected),
         recent_events=recent_events,
+        prev_month=prev_month,
+        next_month=next_month,
+        minutes_to_hhmm=_minutes_to_hhmm,
+    )
+
+
+@bp.get("/me/pause-control")
+@login_required
+@tenant_required
+def pause_control():
+    employee = _employee_for_current_user()
+    requested_month = request.args.get("month")
+
+    if requested_month:
+        try:
+            selected_year, selected_month = map(int, requested_month.split("-", 1))
+        except ValueError:
+            selected_year = datetime.now(timezone.utc).year
+            selected_month = datetime.now(timezone.utc).month
+    else:
+        now = datetime.now(timezone.utc)
+        selected_year = now.year
+        selected_month = now.month
+
+    month_start, month_end = _month_bounds_utc(selected_year, selected_month)
+    month_events_stmt = (
+        select(TimeEvent)
+        .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= month_start, TimeEvent.ts <= month_end)
+        .order_by(TimeEvent.ts.asc())
+    )
+    month_events = list(db.session.execute(month_events_stmt).scalars().all())
+    events_by_day: dict[date, list[TimeEvent]] = {}
+    for event in month_events:
+        events_by_day.setdefault(event.ts.date(), []).append(event)
+
+    month_rows = []
+    month_paused = 0
+    month_expected = 0
+    for day_index in range(monthrange(selected_year, selected_month)[1]):
+        current_day = date(selected_year, selected_month, day_index + 1)
+        day_events = events_by_day.get(current_day, [])
+        paused_minutes, day_pairs = _daily_pause_minutes(day_events)
+        expected_minutes = 30 if current_day.weekday() < 5 else 0
+        month_paused += paused_minutes
+        month_expected += expected_minutes
+        month_rows.append(
+            {
+                "day": current_day,
+                "pairs": day_pairs,
+                "paused": paused_minutes,
+                "expected": expected_minutes,
+                "balance": paused_minutes - expected_minutes,
+            }
+        )
+
+    prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
+    next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+
+    return render_template(
+        "employee/pause_control.html",
+        employee=employee,
+        month_rows=month_rows,
+        month_label=month_start.strftime("%B %Y"),
+        month_paused=_minutes_to_hhmm(month_paused),
+        month_expected=_minutes_to_hhmm(month_expected),
+        month_balance=_minutes_to_hhmm(month_paused - month_expected),
         prev_month=prev_month,
         next_month=next_month,
         minutes_to_hhmm=_minutes_to_hhmm,
