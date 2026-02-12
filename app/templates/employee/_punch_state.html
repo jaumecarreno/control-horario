@@ -63,6 +63,71 @@
       <p class="muted">Sin marcajes de entrada/salida hoy.</p>
     {% endif %}
   </div>
+
+
+  <button type="button" class="report-btn" id="open-report-modal">
+    <span aria-hidden="true">⚠️</span>
+    Reportar incidencia
+  </button>
+</div>
+
+<div class="report-modal" id="report-modal" aria-hidden="true">
+  <div class="report-modal-content" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+    <div class="report-modal-header">
+      <h3 id="report-modal-title" style="margin: 0;">Reportar incidencia</h3>
+      <button type="button" class="close-modal-btn" id="close-report-modal" aria-label="Cerrar ventana">✕</button>
+    </div>
+
+    <button type="button" class="incident-type-btn manual" data-form-target="manual-form">Me he olvidado fichar</button>
+    <div class="incident-form" id="manual-form">
+      <label for="manual-date">Fecha del fichaje</label>
+      <input type="date" id="manual-date" name="manual_date">
+
+      <div class="actions" style="margin-top: .5rem;">
+        <div>
+          <label for="manual-hour">Hora</label>
+          <input type="number" id="manual-hour" min="0" max="23" placeholder="HH">
+        </div>
+        <div>
+          <label for="manual-minute">Minutos</label>
+          <input type="number" id="manual-minute" min="0" max="59" placeholder="MM">
+        </div>
+      </div>
+
+      <label for="manual-kind">Tipo</label>
+      <select id="manual-kind">
+        <option value="ENTRADA">Entrada</option>
+        <option value="SALIDA">Salida</option>
+      </select>
+
+      <p class="muted" style="margin-bottom: 0;">Este fichaje se registrará como WEB - MANUAL.</p>
+
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="button" class="incident-send" data-send-demo="manual">Enviar</button>
+      </div>
+    </div>
+
+    <button type="button" class="incident-type-btn wrong" data-form-target="wrong-form">Fichaje incorrecto</button>
+    <div class="incident-form" id="wrong-form">
+      <label for="wrong-description">Detalle</label>
+      <textarea id="wrong-description" placeholder="Describe brevemente lo ocurrido..."></textarea>
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="button" class="incident-send" data-send-demo="wrong">Enviar (demo)</button>
+      </div>
+    </div>
+
+    <button type="button" class="incident-type-btn other" data-form-target="other-form">Otro motivo</button>
+    <div class="incident-form" id="other-form">
+      <label for="other-description">Detalle</label>
+      <textarea id="other-description" placeholder="Cuéntanos el motivo..."></textarea>
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="button" class="incident-send" data-send-demo="other">Enviar (demo)</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -97,6 +162,56 @@
       clearInterval(window.__clockInterval);
     }
     window.__clockInterval = setInterval(updateClock, 1000);
+
+    const reportModal = document.getElementById("report-modal");
+    const openModalBtn = document.getElementById("open-report-modal");
+    const closeModalBtn = document.getElementById("close-report-modal");
+
+    function closeReportModal() {
+      if (!reportModal) return;
+      reportModal.classList.remove("is-open");
+      reportModal.setAttribute("aria-hidden", "true");
+    }
+
+    function openReportModal() {
+      if (!reportModal) return;
+      reportModal.classList.add("is-open");
+      reportModal.setAttribute("aria-hidden", "false");
+    }
+
+    function showIncidentForm(targetId) {
+      document.querySelectorAll(".incident-form").forEach((form) => {
+        form.classList.toggle("is-visible", form.id === targetId);
+      });
+    }
+
+    if (openModalBtn) {
+      openModalBtn.addEventListener("click", openReportModal);
+    }
+
+    if (closeModalBtn) {
+      closeModalBtn.addEventListener("click", closeReportModal);
+    }
+
+    if (reportModal) {
+      reportModal.addEventListener("click", (event) => {
+        if (event.target === reportModal) {
+          closeReportModal();
+        }
+      });
+    }
+
+    document.querySelectorAll("[data-form-target]").forEach((button) => {
+      button.addEventListener("click", () => showIncidentForm(button.dataset.formTarget));
+    });
+
+    document.querySelectorAll("[data-close-modal='true']").forEach((button) => {
+      button.addEventListener("click", closeReportModal);
+    });
+
+    document.querySelectorAll("[data-send-demo]").forEach((button) => {
+      button.addEventListener("click", closeReportModal);
+    });
   })();
 
   function confirmDimmedAction(event, action, isDimmed) {

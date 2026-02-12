@@ -119,6 +119,100 @@
       .status-pill.status-out { background: #b91c1c; }
       .kiosk-history ul { margin: .4rem 0 0; padding-left: 1.1rem; }
       .kiosk-history li { margin-bottom: .25rem; }
+
+      .report-btn {
+        width: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        background: transparent;
+        color: #f59e0b;
+        border: 1px solid #f59e0b;
+        margin-top: 1rem;
+      }
+
+      .report-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 20;
+      }
+
+      .report-modal.is-open { display: flex; }
+
+      .report-modal-content {
+        width: min(100%, 620px);
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem;
+      }
+
+      .report-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+      }
+
+      .close-modal-btn {
+        width: auto;
+        border-radius: 999px;
+        padding: .3rem .65rem;
+        font-size: 1.15rem;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .incident-type-btn {
+        margin-top: .55rem;
+        font-weight: 700;
+      }
+
+      .incident-type-btn.manual { background: #facc15; color: #3f2e00; }
+      .incident-type-btn.wrong { background: #dc2626; }
+      .incident-type-btn.other { background: #2563eb; }
+
+      .incident-form {
+        margin-top: .75rem;
+        padding: .8rem;
+        border: 1px dashed var(--border);
+        border-radius: 9px;
+        display: none;
+      }
+
+      .incident-form.is-visible { display: block; }
+
+      .incident-form textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .incident-actions {
+        margin-top: .8rem;
+        display: flex;
+        justify-content: flex-end;
+        gap: .6rem;
+      }
+
+      .incident-actions button {
+        width: auto;
+        min-width: 110px;
+      }
+
+      .incident-cancel {
+        background: transparent;
+        border: 1px solid #f59e0b;
+        color: #f59e0b;
+      }
+
+      .incident-send { background: #15803d; }
     </style>
   </head>
   <body>
