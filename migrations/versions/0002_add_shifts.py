@@ -23,8 +23,6 @@ expected_hours_frequency = sa.Enum("YEARLY", "MONTHLY", "WEEKLY", "DAILY", name=
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    expected_hours_frequency.create(bind, checkfirst=True)
 
     op.create_table(
         "shifts",
@@ -49,3 +47,4 @@ def downgrade() -> None:
 
     bind = op.get_bind()
     expected_hours_frequency.drop(bind, checkfirst=True)
+

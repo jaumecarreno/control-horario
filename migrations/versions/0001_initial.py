@@ -26,11 +26,6 @@ leave_request_status = sa.Enum("REQUESTED", "APPROVED", "REJECTED", "CANCELLED",
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    membership_role.create(bind, checkfirst=True)
-    time_event_type.create(bind, checkfirst=True)
-    time_event_source.create(bind, checkfirst=True)
-    leave_request_status.create(bind, checkfirst=True)
 
     op.create_table(
         "tenants",
@@ -207,4 +202,5 @@ def downgrade() -> None:
     time_event_source.drop(bind, checkfirst=True)
     time_event_type.drop(bind, checkfirst=True)
     membership_role.drop(bind, checkfirst=True)
+
 

@@ -70,6 +70,10 @@ class ExpectedHoursFrequency(str, enum.Enum):
     DAILY = "DAILY"
 
 
+# Backward-compatible alias used in tests/imports.
+ShiftPeriod = ExpectedHoursFrequency
+
+
 class Tenant(db.Model):
     __tablename__ = "tenants"
 
