@@ -67,3 +67,28 @@ def app() -> Iterator:
 @pytest.fixture()
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture()
+def admin_only_client(app):
+    with app.app_context():
+        tenant = Tenant(id=uuid.uuid4(), name="Admin Tenant", slug="admin-tenant")
+        user = User(
+            id=uuid.uuid4(),
+            email="admin@example.com",
+            password_hash=hash_secret("password123"),
+            is_active=True,
+        )
+        db.session.add_all([tenant, user])
+        db.session.flush()
+        db.session.add(
+            Membership(
+                tenant_id=tenant.id,
+                user_id=user.id,
+                role=MembershipRole.ADMIN,
+                employee_id=None,
+            )
+        )
+        db.session.commit()
+
+    return app.test_client()
