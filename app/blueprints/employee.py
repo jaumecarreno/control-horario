@@ -27,8 +27,8 @@ ACTION_MAP = {
 
 
 PUNCH_BUTTONS = [
-    {"slug": "in", "label": "Registrar entrada", "icon": "🟢⤵️", "class": "in"},
-    {"slug": "out", "label": "Registrar salida", "icon": "🔴⤴️", "class": "out"},
+    {"slug": "in", "label": "Registrar ENTRADA", "class": "in"},
+    {"slug": "out", "label": "Registrar SALIDA", "class": "out"},
 ]
 
 

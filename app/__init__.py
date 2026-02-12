@@ -10,7 +10,6 @@ from flask_login import current_user
 from app.blueprints.admin import bp as admin_bp
 from app.blueprints.auth import bp as auth_bp
 from app.blueprints.employee import bp as employee_bp
-from app.blueprints.kiosk import bp as kiosk_bp
 from app.blueprints.main import bp as main_bp
 from app.config import Config
 from app.extensions import csrf, db, init_rls_session_listener, login_manager
@@ -25,7 +24,7 @@ TENANT_OPTIONAL_ENDPOINTS = {
     "static",
 }
 
-TENANT_REQUIRED_PREFIXES = ("employee.", "kiosk.", "admin.")
+TENANT_REQUIRED_PREFIXES = ("employee.", "admin.")
 NO_TENANT_UUID = "00000000-0000-0000-0000-000000000000"
 
 
@@ -44,7 +43,6 @@ def create_app(config_object: type[Config] = Config) -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(employee_bp)
-    app.register_blueprint(kiosk_bp)
     app.register_blueprint(admin_bp)
 
     @app.before_request
@@ -78,8 +76,6 @@ def create_app(config_object: type[Config] = Config) -> Flask:
 
         needs_tenant = endpoint.startswith(TENANT_REQUIRED_PREFIXES)
         if needs_tenant and not session.get("active_tenant_id"):
-            if endpoint.startswith("kiosk."):
-                return ("Tenant not selected", 403)
             if current_user.is_authenticated:
                 return redirect(url_for("auth.select_tenant"))
             return None

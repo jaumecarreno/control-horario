@@ -19,7 +19,3 @@ def test_tenant_scoped_endpoint_requires_active_tenant(client):
     assert "/select-tenant" in me_today.headers["Location"]
 
 
-def test_kiosk_denies_without_tenant(client):
-    response = client.get("/kiosk", follow_redirects=False)
-    assert response.status_code == 403
-

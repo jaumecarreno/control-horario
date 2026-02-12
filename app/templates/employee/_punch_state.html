@@ -1,7 +1,14 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
-  <div class="kiosk-clock-wrap">
-    <p class="muted">Hora actual</p>
-    <div class="kiosk-clock" id="live-clock">--:--:--</div>
+  <div class="kiosk-toolbar">
+    <div class="kiosk-clock-wrap">
+      <p class="muted">Hora actual</p>
+      <div class="kiosk-clock" id="live-clock">--:--:--</div>
+    </div>
+
+    <div class="theme-toggle" role="group" aria-label="Cambiar tema">
+      <button type="button" class="theme-btn" data-theme-choice="light" title="Modo claro" aria-label="Modo claro">☀️</button>
+      <button type="button" class="theme-btn" data-theme-choice="dark" title="Modo oscuro" aria-label="Modo oscuro">🌙</button>
+    </div>
   </div>
 
   <p>
@@ -9,7 +16,7 @@
     <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
   </p>
 
-  <div class="actions">
+  <div class="actions punch-actions">
     {% for button in punch_buttons %}
       {% set is_dimmed = (current_state == 'ENTRADA' and button.slug == 'in') or (current_state == 'SALIDA' and button.slug == 'out') %}
       <form
@@ -23,7 +30,21 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="confirm_repeat" value="0">
         <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
-          <span class="kiosk-icon">{{ button.icon }}</span>
+          <span class="kiosk-icon" aria-hidden="true">
+            {% if button.slug == 'in' %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% else %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% endif %}
+          </span>
           {{ button.label }}
         </button>
       </form>
@@ -55,6 +76,21 @@
       const ss = String(now.getSeconds()).padStart(2, "0");
       clockEl.textContent = `${hh}:${mm}:${ss}`;
     }
+
+    function applyTheme(themeName) {
+      document.documentElement.setAttribute("data-theme", themeName);
+      window.localStorage.setItem("control-horario-theme", themeName);
+      document.querySelectorAll(".theme-btn").forEach((node) => {
+        node.classList.toggle("is-selected", node.dataset.themeChoice === themeName);
+      });
+    }
+
+    const savedTheme = window.localStorage.getItem("control-horario-theme") || "dark";
+    applyTheme(savedTheme);
+
+    document.querySelectorAll(".theme-btn").forEach((node) => {
+      node.addEventListener("click", () => applyTheme(node.dataset.themeChoice));
+    });
 
     updateClock();
     if (window.__clockInterval) {
