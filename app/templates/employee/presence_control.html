@@ -5,22 +5,30 @@
     <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap;">
       <div>
         <h1 style="margin-bottom:.25rem;">Control de presencia</h1>
-        <p style="margin:.15rem 0;"><a href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de PAusas</a></p>
+        <p style="margin:.15rem 0;"><a href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de pausas</a></p>
         <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
       </div>
       <div class="inline" style="gap:.4rem;">
-        <a href="{{ url_for('employee.presence_control', month=prev_month) }}">◀</a>
+        <a href="{{ url_for('employee.presence_control', month=prev_month) }}">&#9664;</a>
         <strong>{{ month_label }}</strong>
-        <a href="{{ url_for('employee.presence_control', month=next_month) }}">▶</a>
+        <a href="{{ url_for('employee.presence_control', month=next_month) }}">&#9654;</a>
       </div>
     </div>
 
-    <p class="muted" style="margin-top:0;">Trabajado {{ month_worked }} · Esperado {{ month_expected }} · Balance {{ month_balance }}</p>
+    {% if active_shift %}
+      <p class="muted" style="margin:.25rem 0 0;">
+        Horas esperadas (turno {{ active_shift.name }}): {{ active_shift.expected_hours }} {{ active_shift_frequency }}
+      </p>
+    {% else %}
+      <p class="muted" style="margin:.25rem 0 0;">Sin turno configurado. Se aplica el valor por defecto.</p>
+    {% endif %}
+
+    <p class="muted" style="margin-top:.2rem;">Trabajado {{ month_worked }} &middot; Esperado {{ month_expected }} &middot; Balance {{ month_balance }}</p>
 
     <table>
       <thead>
         <tr>
-          <th>Día</th>
+          <th>Dia</th>
           <th>Entradas/Salidas</th>
           <th>Trabajado</th>
           <th>Esperado</th>
@@ -35,7 +43,7 @@
               {% if row.pairs %}
                 {{ row.pairs|join(', ') }}
               {% else %}
-                —
+                -
               {% endif %}
             </td>
             <td>{{ minutes_to_hhmm(row.worked) }}</td>
@@ -48,7 +56,7 @@
   </section>
 
   <section class="card">
-    <h2 style="margin-top:0;">Últimos registros</h2>
+    <h2 style="margin-top:0;">Ultimos registros</h2>
     <table>
       <thead>
         <tr>
@@ -67,7 +75,7 @@
             <td>{% if (event.meta_json or {}).get('manual') %}<strong>Manual</strong>{% else %}Normal{% endif %}</td>
           </tr>
         {% else %}
-          <tr><td colspan="4">Sin registros todavía.</td></tr>
+          <tr><td colspan="4">Sin registros todavia.</td></tr>
         {% endfor %}
       </tbody>
     </table>

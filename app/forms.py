@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, DateField, IntegerField, PasswordField, SelectField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, Length, Optional, ValidationError
+from wtforms import BooleanField, DateField, DecimalField, IntegerField, PasswordField, SelectField, StringField, SubmitField
+from wtforms.validators import DataRequired, Email, Length, NumberRange, Optional, ValidationError
 
 
 class LoginForm(FlaskForm):
@@ -50,3 +50,21 @@ class DateRangeExportForm(FlaskForm):
         if self.date_from.data and field.data and field.data < self.date_from.data:
             raise ValidationError("End date must be on or after start date.")
 
+
+class ShiftCreateForm(FlaskForm):
+    name = StringField("Nombre", validators=[DataRequired(), Length(max=128)])
+    break_counts_as_worked_bool = BooleanField("El descanso cuenta como jornada laboral", default=True)
+    break_minutes = IntegerField("Minutos de descanso", validators=[DataRequired(), NumberRange(min=0, max=1440)], default=30)
+    expected_hours = DecimalField("Horas trabajadas", validators=[DataRequired(), NumberRange(min=0, max=9999)], places=2)
+    expected_hours_frequency = SelectField(
+        "Frecuencia",
+        choices=[
+            ("YEARLY", "Anuales"),
+            ("MONTHLY", "Mensuales"),
+            ("WEEKLY", "Semanales"),
+            ("DAILY", "Diarias"),
+        ],
+        validators=[DataRequired()],
+        default="DAILY",
+    )
+    submit = SubmitField("Crear turno")

@@ -57,10 +57,16 @@ CREATE POLICY leave_requests_tenant_isolation ON leave_requests
 USING (tenant_id = current_setting('app.tenant_id')::uuid)
 WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
+ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE shifts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS shifts_tenant_isolation ON shifts;
+CREATE POLICY shifts_tenant_isolation ON shifts
+USING (tenant_id = current_setting('app.tenant_id')::uuid)
+WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS audit_log_tenant_isolation ON audit_log;
 CREATE POLICY audit_log_tenant_isolation ON audit_log
 USING (tenant_id = current_setting('app.tenant_id')::uuid)
 WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
-

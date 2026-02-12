@@ -13,8 +13,18 @@ from sqlalchemy import select
 
 from app.audit import log_audit
 from app.extensions import db
-from app.forms import DateRangeExportForm, EmployeeCreateForm
-from app.models import Employee, LeaveRequest, LeaveRequestStatus, LeaveType, MembershipRole, TimeAdjustment, TimeEvent
+from app.forms import DateRangeExportForm, EmployeeCreateForm, ShiftCreateForm
+from app.models import (
+    Employee,
+    ExpectedHoursFrequency,
+    LeaveRequest,
+    LeaveRequestStatus,
+    LeaveType,
+    MembershipRole,
+    Shift,
+    TimeAdjustment,
+    TimeEvent,
+)
 from app.security import hash_secret
 from app.tenant import get_active_tenant_id, roles_required, tenant_required
 
@@ -22,6 +32,12 @@ from app.tenant import get_active_tenant_id, roles_required, tenant_required
 bp = Blueprint("admin", __name__)
 
 ADMIN_ROLES = {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}
+SHIFT_FREQUENCY_LABELS = {
+    ExpectedHoursFrequency.YEARLY: "Anuales",
+    ExpectedHoursFrequency.MONTHLY: "Mensuales",
+    ExpectedHoursFrequency.WEEKLY: "Semanales",
+    ExpectedHoursFrequency.DAILY: "Diarias",
+}
 
 
 @bp.get("/admin/employees")
@@ -70,7 +86,7 @@ def employees_new():
 @tenant_required
 @roles_required(ADMIN_ROLES)
 def team_today():
-    return _render_turnos()
+    return redirect(url_for("admin.shifts"))
 
 
 @bp.get("/admin/turnos")
@@ -82,21 +98,61 @@ def shifts():
 
 
 def _render_turnos():
-    start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
-    end = datetime.combine(datetime.now(timezone.utc).date(), time.max, tzinfo=timezone.utc)
+    rows = list(db.session.execute(select(Shift).order_by(Shift.name.asc())).scalars().all())
+    return render_template("admin/shifts.html", rows=rows, shift_frequency_labels=SHIFT_FREQUENCY_LABELS)
 
-    employees = list(db.session.execute(select(Employee).where(Employee.active.is_(True)).order_by(Employee.name.asc())).scalars().all())
-    rows = []
-    for employee in employees:
-        stmt = (
-            select(TimeEvent)
-            .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= start, TimeEvent.ts <= end)
-            .order_by(TimeEvent.ts.desc())
-            .limit(1)
+
+@bp.route("/admin/turnos/new", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def shifts_new():
+    form = ShiftCreateForm()
+    if form.validate_on_submit():
+        tenant_id = get_active_tenant_id()
+        if tenant_id is None:
+            abort(400, description="No active tenant selected.")
+
+        shift_name = form.name.data.strip()
+        if not shift_name:
+            flash("El nombre del turno es obligatorio.", "danger")
+            return render_template("admin/shift_new.html", form=form)
+
+        existing_shift = db.session.execute(
+            select(Shift).where(Shift.tenant_id == tenant_id, Shift.name == shift_name)
+        ).scalar_one_or_none()
+        if existing_shift is not None:
+            flash("Ya existe un turno con ese nombre.", "warning")
+            return render_template("admin/shift_new.html", form=form)
+
+        expected_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
+        shift = Shift(
+            tenant_id=tenant_id,
+            name=shift_name,
+            break_counts_as_worked_bool=bool(form.break_counts_as_worked_bool.data),
+            break_minutes=int(form.break_minutes.data),
+            expected_hours=form.expected_hours.data,
+            expected_hours_frequency=expected_frequency,
         )
-        last_event = db.session.execute(stmt).scalar_one_or_none()
-        rows.append((employee, last_event))
-    return render_template("admin/team_today.html", rows=rows)
+        db.session.add(shift)
+        db.session.flush()
+        log_audit(
+            action="SHIFT_CREATED",
+            entity_type="shifts",
+            entity_id=shift.id,
+            payload={
+                "name": shift.name,
+                "break_counts_as_worked_bool": shift.break_counts_as_worked_bool,
+                "break_minutes": shift.break_minutes,
+                "expected_hours": str(shift.expected_hours),
+                "expected_hours_frequency": shift.expected_hours_frequency.value,
+            },
+        )
+        db.session.commit()
+        flash("Turno creado.", "success")
+        return redirect(url_for("admin.shifts"))
+
+    return render_template("admin/shift_new.html", form=form)
 
 
 @bp.get("/admin/approvals")

@@ -36,6 +36,7 @@ def test_rls_blocks_cross_tenant_reads():
                 """
                 TRUNCATE TABLE
                     audit_log,
+                    shifts,
                     leave_requests,
                     leave_types,
                     time_adjustments,

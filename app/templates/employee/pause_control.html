@@ -4,22 +4,30 @@
   <section class="card">
     <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap;">
       <div>
-        <h1 style="margin-bottom:.25rem;">Control de PAusas</h1>
+        <h1 style="margin-bottom:.25rem;">Control de pausas</h1>
         <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
       </div>
       <div class="inline" style="gap:.4rem;">
-        <a href="{{ url_for('employee.pause_control', month=prev_month) }}">◀</a>
+        <a href="{{ url_for('employee.pause_control', month=prev_month) }}">&#9664;</a>
         <strong>{{ month_label }}</strong>
-        <a href="{{ url_for('employee.pause_control', month=next_month) }}">▶</a>
+        <a href="{{ url_for('employee.pause_control', month=next_month) }}">&#9654;</a>
       </div>
     </div>
 
-    <p class="muted" style="margin-top:0;">Pausas {{ month_paused }} · Esperado {{ month_expected }} · Balance {{ month_balance }}</p>
+    {% if active_shift %}
+      <p class="muted" style="margin:.25rem 0 0;">
+        Minutos esperados por dia laboral (turno {{ active_shift.name }}): {{ active_shift.break_minutes }}
+      </p>
+    {% else %}
+      <p class="muted" style="margin:.25rem 0 0;">Sin turno configurado. Se aplica el valor por defecto.</p>
+    {% endif %}
+
+    <p class="muted" style="margin-top:.2rem;">Pausas {{ month_paused }} &middot; Esperado {{ month_expected }} &middot; Balance {{ month_balance }}</p>
 
     <table>
       <thead>
         <tr>
-          <th>Día</th>
+          <th>Dia</th>
           <th>Entradas/Salidas</th>
           <th>Pausas</th>
           <th>Esperado</th>
@@ -34,7 +42,7 @@
               {% if row.pairs %}
                 {{ row.pairs|join(', ') }}
               {% else %}
-                —
+                -
               {% endif %}
             </td>
             <td>{{ minutes_to_hhmm(row.paused) }}</td>

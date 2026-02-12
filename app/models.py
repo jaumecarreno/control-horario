@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import uuid
+from decimal import Decimal
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -17,6 +18,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     Uuid,
@@ -59,6 +61,13 @@ class LeaveRequestStatus(str, enum.Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
+
+
+class ExpectedHoursFrequency(str, enum.Enum):
+    YEARLY = "YEARLY"
+    MONTHLY = "MONTHLY"
+    WEEKLY = "WEEKLY"
+    DAILY = "DAILY"
 
 
 class Tenant(db.Model):
@@ -129,6 +138,27 @@ class Employee(db.Model):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Shift(db.Model):
+    __tablename__ = "shifts"
+    __table_args__ = (
+        Index("ix_shifts_tenant_name", "tenant_id", "name"),
+        UniqueConstraint("tenant_id", "name", name="uq_shifts_tenant_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    break_counts_as_worked_bool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    expected_hours: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False, default=Decimal("8.00"))
+    expected_hours_frequency: Mapped[ExpectedHoursFrequency] = mapped_column(
+        Enum(ExpectedHoursFrequency, name="expected_hours_frequency"),
+        nullable=False,
+        default=ExpectedHoursFrequency.DAILY,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
 
 
 class TimeEvent(db.Model):

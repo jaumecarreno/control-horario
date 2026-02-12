@@ -14,7 +14,17 @@ from sqlalchemy import select
 from app.audit import log_audit
 from app.extensions import db
 from app.forms import LeaveRequestForm
-from app.models import Employee, LeaveRequest, LeaveRequestStatus, LeaveType, TimeEvent, TimeEventSource, TimeEventType
+from app.models import (
+    Employee,
+    ExpectedHoursFrequency,
+    LeaveRequest,
+    LeaveRequestStatus,
+    LeaveType,
+    Shift,
+    TimeEvent,
+    TimeEventSource,
+    TimeEventType,
+)
 from app.tenant import current_membership, tenant_required
 
 
@@ -32,6 +42,13 @@ PUNCH_BUTTONS = [
     {"slug": "in", "label": "Registrar ENTRADA", "class": "in"},
     {"slug": "out", "label": "Registrar SALIDA", "class": "out"},
 ]
+
+SHIFT_FREQUENCY_LABELS = {
+    ExpectedHoursFrequency.YEARLY: "Anuales",
+    ExpectedHoursFrequency.MONTHLY: "Mensuales",
+    ExpectedHoursFrequency.WEEKLY: "Semanales",
+    ExpectedHoursFrequency.DAILY: "Diarias",
+}
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
@@ -115,6 +132,52 @@ def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
     days_in_month = monthrange(year, month)[1]
     end = datetime(year=year, month=month, day=days_in_month, hour=23, minute=59, second=59, microsecond=999999, tzinfo=tz)
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _tenant_shift(tenant_id: uuid.UUID) -> Shift | None:
+    stmt = select(Shift).where(Shift.tenant_id == tenant_id).order_by(Shift.created_at.asc(), Shift.name.asc()).limit(1)
+    return db.session.execute(stmt).scalar_one_or_none()
+
+
+def _business_days_in_month(year: int, month: int) -> int:
+    return sum(1 for day in range(1, monthrange(year, month)[1] + 1) if date(year, month, day).weekday() < 5)
+
+
+def _business_days_in_year(year: int) -> int:
+    total = 0
+    for month in range(1, 13):
+        total += _business_days_in_month(year, month)
+    return total
+
+
+def _expected_work_minutes_for_day(
+    shift: Shift | None,
+    current_day: date,
+    business_days_in_month: int,
+    business_days_in_year: int,
+) -> int:
+    if current_day.weekday() >= 5:
+        return 0
+
+    if shift is None:
+        return 450
+
+    total_minutes = max(0.0, float(shift.expected_hours) * 60.0)
+    if shift.expected_hours_frequency == ExpectedHoursFrequency.DAILY:
+        return int(round(total_minutes))
+    if shift.expected_hours_frequency == ExpectedHoursFrequency.WEEKLY:
+        return int(round(total_minutes / 5))
+    if shift.expected_hours_frequency == ExpectedHoursFrequency.MONTHLY:
+        return int(round(total_minutes / max(1, business_days_in_month)))
+    return int(round(total_minutes / max(1, business_days_in_year)))
+
+
+def _expected_pause_minutes_for_day(shift: Shift | None, current_day: date) -> int:
+    if current_day.weekday() >= 5:
+        return 0
+    if shift is None:
+        return 30
+    return max(0, int(shift.break_minutes))
 
 
 def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool]:
@@ -416,6 +479,12 @@ def presence_control():
     for event in month_events:
         events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
+    active_shift = _tenant_shift(employee.tenant_id)
+    active_shift_frequency = (
+        SHIFT_FREQUENCY_LABELS.get(active_shift.expected_hours_frequency) if active_shift is not None else None
+    )
+    business_days_in_month = _business_days_in_month(selected_year, selected_month)
+    business_days_in_year = _business_days_in_year(selected_year)
     month_rows = []
     month_worked = 0
     month_expected = 0
@@ -423,7 +492,15 @@ def presence_control():
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
         worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
-        expected_minutes = 450 if current_day.weekday() < 5 else 0
+        paused_minutes, _ = _daily_pause_minutes(day_events)
+        if active_shift is not None and not active_shift.break_counts_as_worked_bool:
+            worked_minutes = max(0, worked_minutes - paused_minutes)
+        expected_minutes = _expected_work_minutes_for_day(
+            active_shift,
+            current_day,
+            business_days_in_month,
+            business_days_in_year,
+        )
         month_worked += worked_minutes
         month_expected += expected_minutes
         month_rows.append(
@@ -456,6 +533,8 @@ def presence_control():
         prev_month=prev_month,
         next_month=next_month,
         minutes_to_hhmm=_minutes_to_hhmm,
+        active_shift=active_shift,
+        active_shift_frequency=active_shift_frequency,
     )
 
 
@@ -489,6 +568,7 @@ def pause_control():
     for event in month_events:
         events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
+    active_shift = _tenant_shift(employee.tenant_id)
     month_rows = []
     month_paused = 0
     month_expected = 0
@@ -496,7 +576,7 @@ def pause_control():
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
         paused_minutes, day_pairs = _daily_pause_minutes(day_events)
-        expected_minutes = 30 if current_day.weekday() < 5 else 0
+        expected_minutes = _expected_pause_minutes_for_day(active_shift, current_day)
         month_paused += paused_minutes
         month_expected += expected_minutes
         month_rows.append(
@@ -523,6 +603,7 @@ def pause_control():
         prev_month=prev_month,
         next_month=next_month,
         minutes_to_hhmm=_minutes_to_hhmm,
+        active_shift=active_shift,
     )
 
 
