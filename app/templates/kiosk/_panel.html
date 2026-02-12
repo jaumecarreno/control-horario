@@ -19,7 +19,14 @@
           data-status="{{ status }}"
           data-should-confirm="{{ 'true' if status == 'ENTRADA' else 'false' }}"
         >
-          🟢⤵️ Registrar entrada
+          <span class="kiosk-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Registrar ENTRADA
         </button>
       </form>
 
@@ -38,7 +45,14 @@
           data-status="{{ status }}"
           data-should-confirm="{{ 'true' if status == 'SALIDA' else 'false' }}"
         >
-          🔴⤴️ Registrar salida
+          <span class="kiosk-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          Registrar SALIDA
         </button>
       </form>
     </div>
