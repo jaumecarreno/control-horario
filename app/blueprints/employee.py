@@ -419,13 +419,11 @@ def presence_control():
     month_rows = []
     month_worked = 0
     month_expected = 0
-    shift_period = _enum_value(employee.shift.expected_hours_period, fallback="DAILY") if employee.shift else "DAILY"
-    default_expected_daily = employee.shift.expected_hours * 60 if employee.shift and shift_period == "DAILY" else 450
     for day_index in range(monthrange(selected_year, selected_month)[1]):
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
         worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
-        expected_minutes = default_expected_daily if current_day.weekday() < 5 else 0
+        expected_minutes = 450 if current_day.weekday() < 5 else 0
         month_worked += worked_minutes
         month_expected += expected_minutes
         month_rows.append(
@@ -494,12 +492,11 @@ def pause_control():
     month_rows = []
     month_paused = 0
     month_expected = 0
-    default_expected_pause = employee.shift.break_minutes if employee.shift else 30
     for day_index in range(monthrange(selected_year, selected_month)[1]):
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
         paused_minutes, day_pairs = _daily_pause_minutes(day_events)
-        expected_minutes = default_expected_pause if current_day.weekday() < 5 else 0
+        expected_minutes = 30 if current_day.weekday() < 5 else 0
         month_paused += paused_minutes
         month_expected += expected_minutes
         month_rows.append(

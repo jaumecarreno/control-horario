@@ -116,26 +116,6 @@ class Site(db.Model):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
-class ShiftPeriod(str, enum.Enum):
-    ANNUAL = "ANNUAL"
-    MONTHLY = "MONTHLY"
-    WEEKLY = "WEEKLY"
-    DAILY = "DAILY"
-
-
-class Shift(db.Model):
-    __tablename__ = "shifts"
-    __table_args__ = (Index("ix_shifts_tenant_name", "tenant_id", "name"),)
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    break_counts_as_work: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    expected_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    expected_hours_period: Mapped[ShiftPeriod] = mapped_column(Enum(ShiftPeriod, name="shift_period"), nullable=False)
-
-
 class Employee(db.Model):
     __tablename__ = "employees"
     __table_args__ = (
@@ -149,9 +129,6 @@ class Employee(db.Model):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    shift_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("shifts.id", ondelete="SET NULL"), nullable=True)
-
-    shift: Mapped[Shift | None] = relationship()
 
 
 class TimeEvent(db.Model):
