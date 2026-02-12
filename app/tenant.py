@@ -54,6 +54,19 @@ def current_membership() -> Membership | None:
     return db.session.execute(stmt).scalar_one_or_none()
 
 
+def landing_endpoint_for_membership(membership: Membership | None) -> str:
+    if membership is None:
+        return "auth.select_tenant"
+
+    if membership.employee_id is not None:
+        return "employee.me_today"
+
+    if membership.role in {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}:
+        return "admin.team_today"
+
+    return "auth.select_tenant"
+
+
 def roles_required(allowed_roles: set[MembershipRole]):
     def decorator(view: Callable):
         @functools.wraps(view)
