@@ -25,12 +25,11 @@ ACTION_MAP = {
     "break-end": TimeEventType.BREAK_END,
 }
 
-ACTION_LABELS = {
-    "in": "Punch in",
-    "out": "Punch out",
-    "break-start": "Start break",
-    "break-end": "End break",
-}
+
+PUNCH_BUTTONS = [
+    {"slug": "in", "label": "Registrar entrada", "icon": "->]", "class": "in"},
+    {"slug": "out", "label": "Registrar salida", "icon": "[->", "class": "out"},
+]
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
@@ -61,30 +60,48 @@ def _todays_events(employee_id: uuid.UUID) -> list[TimeEvent]:
     return list(db.session.execute(stmt).scalars().all())
 
 
-def _available_actions(events: list[TimeEvent]) -> list[dict[str, str]]:
+def _current_presence_state(events: list[TimeEvent]) -> str:
     if not events:
-        keys = ["in"]
-    else:
-        last = events[-1].type
-        if last == TimeEventType.IN:
-            keys = ["break-start", "out"]
-        elif last == TimeEventType.OUT:
-            keys = ["in"]
-        elif last == TimeEventType.BREAK_START:
-            keys = ["break-end"]
-        else:
-            keys = ["break-start", "out"]
-    return [{"slug": key, "label": ACTION_LABELS[key]} for key in keys]
+        return "SALIDA"
+
+    last_type = events[-1].type
+    if last_type == TimeEventType.IN:
+        return "ENTRADA"
+    if last_type == TimeEventType.OUT:
+        return "SALIDA"
+
+    # Break events keep the most recent in/out state.
+    for event in reversed(events[:-1]):
+        if event.type == TimeEventType.IN:
+            return "ENTRADA"
+        if event.type == TimeEventType.OUT:
+            return "SALIDA"
+    return "SALIDA"
+
+
+def _recent_punches(events: list[TimeEvent]) -> list[dict[str, str]]:
+    rows = []
+    for event in reversed(events):
+        if event.type == TimeEventType.IN:
+            rows.append({"label": "Entrada", "ts": event.ts})
+        elif event.type == TimeEventType.OUT:
+            rows.append({"label": "Salida", "ts": event.ts})
+        if len(rows) == 5:
+            break
+    return rows
 
 
 def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
     return render_template(
         "employee/_punch_state.html",
         employee=employee,
         events=events,
         last_event=events[-1] if events else None,
-        available_actions=_available_actions(events),
+        punch_buttons=PUNCH_BUTTONS,
+        current_state=current_state,
+        recent_punches=_recent_punches(events),
     )
 
 
@@ -94,12 +111,15 @@ def _render_punch_state(employee: Employee):
 def me_today():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
     return render_template(
         "employee/today.html",
         employee=employee,
         events=events,
         last_event=events[-1] if events else None,
-        available_actions=_available_actions(events),
+        punch_buttons=PUNCH_BUTTONS,
+        current_state=current_state,
+        recent_punches=_recent_punches(events),
     )
 
 
