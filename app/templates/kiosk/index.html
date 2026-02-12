@@ -1,11 +1,47 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="card">
-    <h1>Kiosk</h1>
+  <section class="card kiosk-card">
+    <h1>Fichaje</h1>
+    <p class="kiosk-clock-wrap">Hora actual: <strong id="kiosk-clock" class="kiosk-clock" aria-live="polite"></strong></p>
     <div id="kiosk-panel">
       {% include "kiosk/_panel.html" %}
     </div>
   </section>
-{% endblock %}
 
+  <script>
+    (function () {
+      function updateClock() {
+        const clockNode = document.getElementById("kiosk-clock");
+        if (!clockNode) return;
+        const now = new Date();
+        clockNode.textContent = now.toLocaleTimeString("es-ES", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      }
+
+      updateClock();
+      window.setInterval(updateClock, 1000);
+
+      document.body.addEventListener("submit", function (event) {
+        const form = event.target;
+        if (!form || !(form instanceof HTMLFormElement)) return;
+        const button = form.querySelector("button[data-should-confirm='true']");
+        if (!button) return;
+
+        const actionLabel = button.getAttribute("data-action-label");
+        const status = button.getAttribute("data-status");
+        const message =
+          status === "ENTRADA"
+            ? "Actualmente ya estás en ENTRADA y no deberías pulsar REGISTRAR ENTRADA. ¿Quieres continuar?"
+            : "Actualmente ya estás en SALIDA y no deberías pulsar REGISTRAR SALIDA. ¿Quieres continuar?";
+
+        if (!window.confirm(message + "\n\nAcción: " + actionLabel)) {
+          event.preventDefault();
+        }
+      });
+    })();
+  </script>
+{% endblock %}

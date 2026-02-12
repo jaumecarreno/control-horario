@@ -1,22 +1,66 @@
 <div id="kiosk-panel">
   {% if employee %}
-    <p>Authenticated employee: <strong>{{ employee.name }}</strong></p>
-    <div class="actions">
-      {% for slug, label in [('in','Punch in'), ('out','Punch out'), ('break-start','Start break'), ('break-end','End break')] %}
-        <form
-          method="post"
-          action="{{ url_for('kiosk.kiosk_punch', action=slug) }}"
-          hx-post="{{ url_for('kiosk.kiosk_punch', action=slug) }}"
-          hx-target="#kiosk-panel"
-          hx-swap="outerHTML"
+    <p>Empleado autenticado: <strong>{{ employee.name }}</strong></p>
+    <p class="muted">Estado actual: <strong>{{ status }}</strong></p>
+
+    <div class="kiosk-actions actions">
+      <form
+        method="post"
+        action="{{ url_for('kiosk.kiosk_punch', action='in') }}"
+        hx-post="{{ url_for('kiosk.kiosk_punch', action='in') }}"
+        hx-target="#kiosk-panel"
+        hx-swap="outerHTML"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button
+          type="submit"
+          class="kiosk-btn in{% if status == 'ENTRADA' %} is-dimmed{% endif %}"
+          data-action-label="REGISTRAR ENTRADA"
+          data-status="{{ status }}"
+          data-should-confirm="{{ 'true' if status == 'ENTRADA' else 'false' }}"
         >
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit">{{ label }}</button>
-        </form>
-      {% endfor %}
+          ->] Registrar entrada
+        </button>
+      </form>
+
+      <form
+        method="post"
+        action="{{ url_for('kiosk.kiosk_punch', action='out') }}"
+        hx-post="{{ url_for('kiosk.kiosk_punch', action='out') }}"
+        hx-target="#kiosk-panel"
+        hx-swap="outerHTML"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button
+          type="submit"
+          class="kiosk-btn out{% if status == 'SALIDA' %} is-dimmed{% endif %}"
+          data-action-label="REGISTRAR SALIDA"
+          data-status="{{ status }}"
+          data-should-confirm="{{ 'true' if status == 'SALIDA' else 'false' }}"
+        >
+          [-> Registrar salida
+        </button>
+      </form>
     </div>
+
+    {% if recent_events %}
+      <div class="kiosk-history">
+        <p><strong>Últimos 5 marcajes</strong></p>
+        <ul>
+          {% for event in recent_events %}
+            <li>
+              {% if event.type.value == 'IN' %}
+                Entrada - {{ event.ts }}
+              {% else %}
+                Salida - {{ event.ts }}
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
   {% else %}
-    <p>Enter employee PIN</p>
+    <p>Introduce PIN de empleado</p>
     {% if pin_error %}
       <p class="flash danger">{{ pin_error }}</p>
     {% endif %}
@@ -31,9 +75,8 @@
       <label for="pin">PIN</label>
       <input id="pin" name="pin" type="password" minlength="4" maxlength="16" required>
       <div style="margin-top: .8rem;">
-        <button type="submit">Authenticate</button>
+        <button type="submit">Autenticar</button>
       </div>
     </form>
   {% endif %}
 </div>
-
