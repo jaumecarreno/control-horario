@@ -61,7 +61,7 @@
       <tbody>
         {% for event in recent_events %}
           <tr>
-            <td>{{ event.ts.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+            <td>{{ to_app_tz(event.ts).strftime('%d/%m/%Y %H:%M:%S') }}</td>
             <td>{{ event.type.value }}</td>
             <td>{{ event.source.value }}</td>
             <td>{% if (event.meta_json or {}).get('manual') %}<strong>Manual</strong>{% else %}Normal{% endif %}</td>

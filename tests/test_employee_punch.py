@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from sqlalchemy import func, select
 
 from app.extensions import db
-from app.models import Tenant, TimeEvent, TimeEventType
+from app.models import Employee, Tenant, TimeEvent, TimeEventSource, TimeEventType
 
 
 def _login(client):
@@ -71,6 +73,33 @@ def test_manual_incident_creates_event_and_is_visible_in_presence(client):
     html = page.get_data(as_text=True)
     assert "Control de presencia" in html
     assert "Manual" in html
+
+
+
+
+def test_presence_control_renders_local_timezone_hour(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee_id = db.session.execute(select(Employee.id).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+        db.session.add(
+            TimeEvent(
+                tenant_id=tenant_id,
+                employee_id=employee_id,
+                type=TimeEventType.IN,
+                source=TimeEventSource.WEB,
+                ts=datetime(2026, 2, 12, 8, 30, tzinfo=timezone.utc),
+            )
+        )
+        db.session.commit()
+
+    page = client.get("/me/presence-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "12/02/2026 09:30:00" in html
 
 
 def test_pause_toggle_creates_break_events_and_updates_today_state(client):
