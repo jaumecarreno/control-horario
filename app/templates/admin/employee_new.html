@@ -9,8 +9,10 @@
       {{ form.name() }}
       <label for="{{ form.email.id }}">Email (optional)</label>
       {{ form.email() }}
-      <label for="{{ form.pin.id }}">PIN (optional)</label>
+      <label for="{{ form.pin.id }}">PIN (optional) (demo)</label>
       {{ form.pin() }}
+      <label for="{{ form.shift_id.id }}">Turno</label>
+      {{ form.shift_id() }}
       <div class="inline" style="margin-top: .75rem;">
         {{ form.active() }} <span>Active</span>
       </div>
@@ -18,4 +20,3 @@
     </form>
   </section>
 {% endblock %}
-
