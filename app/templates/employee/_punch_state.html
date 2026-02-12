@@ -1,42 +1,83 @@
-<div id="punch-state">
-  {% if last_event %}
-    <p>Last event: <strong>{{ last_event.type.value }}</strong> at {{ last_event.ts }}</p>
-  {% else %}
-    <p>No events yet today.</p>
-  {% endif %}
+<div id="punch-state" data-current-state="{{ current_state }}">
+  <div class="kiosk-clock-wrap">
+    <p class="muted">Hora actual</p>
+    <div class="kiosk-clock" id="live-clock">--:--:--</div>
+  </div>
+
+  <p>
+    Estado actual:
+    <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
+  </p>
+
   <div class="actions">
-    {% for action in available_actions %}
+    {% for button in punch_buttons %}
+      {% set is_dimmed = (current_state == 'ENTRADA' and button.slug == 'in') or (current_state == 'SALIDA' and button.slug == 'out') %}
       <form
         method="post"
-        action="{{ url_for('employee.punch_action', action=action.slug) }}"
-        hx-post="{{ url_for('employee.punch_action', action=action.slug) }}"
+        action="{{ url_for('employee.punch_action', action=button.slug) }}"
+        hx-post="{{ url_for('employee.punch_action', action=button.slug) }}"
         hx-target="#punch-state"
         hx-swap="outerHTML"
+        onsubmit="return confirmDimmedAction(event, '{{ button.slug }}', {{ 'true' if is_dimmed else 'false' }})"
       >
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">{{ action.label }}</button>
+        <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
+          <span class="kiosk-icon">{{ button.icon }}</span>
+          {{ button.label }}
+        </button>
       </form>
     {% endfor %}
   </div>
-  {% if events %}
-    <table style="margin-top: 1rem;">
-      <thead>
-        <tr>
-          <th>Timestamp</th>
-          <th>Type</th>
-          <th>Source</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for event in events %}
-          <tr>
-            <td>{{ event.ts }}</td>
-            <td>{{ event.type.value }}</td>
-            <td>{{ event.source.value }}</td>
-          </tr>
+
+  <div class="kiosk-history" style="margin-top: 1rem;">
+    <h3 style="margin-bottom: .25rem;">Historial reciente</h3>
+    {% if recent_punches %}
+      <ul>
+        {% for row in recent_punches %}
+          <li>{{ row.label }} - {{ row.ts }}</li>
         {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
+      </ul>
+    {% else %}
+      <p class="muted">Sin marcajes de entrada/salida hoy.</p>
+    {% endif %}
+  </div>
 </div>
 
+<script>
+  (function () {
+    function updateClock() {
+      const clockEl = document.getElementById("live-clock");
+      if (!clockEl) return;
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      clockEl.textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    updateClock();
+    if (window.__clockInterval) {
+      clearInterval(window.__clockInterval);
+    }
+    window.__clockInterval = setInterval(updateClock, 1000);
+  })();
+
+  function confirmDimmedAction(event, action, isDimmed) {
+    if (!isDimmed) {
+      return true;
+    }
+
+    const stateEl = document.getElementById("punch-state");
+    const currentState = stateEl ? stateEl.dataset.currentState : "";
+
+    if (action === "in" && currentState === "ENTRADA") {
+      return window.confirm("Ya estás en ENTRADA. No deberías pulsar REGISTRAR ENTRADA. ¿Quieres continuar?");
+    }
+
+    if (action === "out" && currentState === "SALIDA") {
+      return window.confirm("Ya estás en SALIDA. No deberías pulsar REGISTRAR SALIDA. ¿Quieres continuar?");
+    }
+
+    return true;
+  }
+</script>

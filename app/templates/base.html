@@ -73,6 +73,10 @@
       .kiosk-btn.in { background: #15803d; }
       .kiosk-btn.out { background: #b91c1c; }
       .kiosk-btn.is-dimmed { opacity: .55; }
+      .kiosk-icon { display: inline-block; min-width: 2rem; font-family: monospace; }
+      .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
+      .status-pill.status-in { background: #15803d; }
+      .status-pill.status-out { background: #b91c1c; }
       .kiosk-history ul { margin: .4rem 0 0; padding-left: 1.1rem; }
       .kiosk-history li { margin-bottom: .25rem; }
     </style>
@@ -86,7 +90,6 @@
         {% if current_user.is_authenticated %}
           <a href="{{ url_for('employee.me_today') }}">Me</a>
           <a href="{{ url_for('admin.employees_list') }}">Admin</a>
-          <a href="{{ url_for('kiosk.kiosk_index') }}">Kiosk</a>
           <a href="{{ url_for('auth.select_tenant') }}">Tenant</a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
