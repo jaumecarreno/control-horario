@@ -70,6 +70,18 @@ def employees_new():
 @tenant_required
 @roles_required(ADMIN_ROLES)
 def team_today():
+    return _render_turnos()
+
+
+@bp.get("/admin/turnos")
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def shifts():
+    return _render_turnos()
+
+
+def _render_turnos():
     start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
     end = datetime.combine(datetime.now(timezone.utc).date(), time.max, tzinfo=timezone.utc)
 
@@ -190,4 +202,3 @@ def adjustments_stub():
         db.session.execute(select(TimeAdjustment).order_by(TimeAdjustment.created_at.desc()).limit(20)).scalars().all()
     )
     return render_template("admin/adjustments.html", rows=rows)
-
