@@ -22,4 +22,4 @@ class Config:
 
     WTF_CSRF_TIME_LIMIT = None
     APP_URL = os.getenv("APP_URL", "http://localhost:5000")
-
+    APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Madrid")

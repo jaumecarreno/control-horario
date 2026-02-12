@@ -1,12 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Control Horario</title>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script>
+      (function () {
+        var savedTheme = window.localStorage.getItem("control-horario-theme");
+        if (savedTheme) {
+          document.documentElement.setAttribute("data-theme", savedTheme);
+        }
+      })();
+    </script>
     <style>
       :root {
+        --bg: #12151c;
+        --panel: #1a202c;
+        --text: #e5e7eb;
+        --muted: #a8b1c2;
+        --accent: #15803d;
+        --danger: #dc2626;
+        --border: #2c3648;
+      }
+      :root[data-theme="light"] {
         --bg: #f2f4f7;
         --panel: #ffffff;
         --text: #1e293b;
@@ -20,7 +37,7 @@
         margin: 0;
         font-family: "Segoe UI", Tahoma, sans-serif;
         color: var(--text);
-        background: radial-gradient(circle at 20% 10%, #d9efe7, var(--bg) 35%);
+        background: radial-gradient(circle at 20% 10%, rgba(15,118,110,.22), var(--bg) 35%);
       }
       header {
         padding: 1rem 1.5rem;
@@ -47,7 +64,7 @@
         padding: .55rem .65rem;
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: #fff;
+        background: var(--panel);
       }
       button {
         cursor: pointer;
@@ -66,6 +83,138 @@
       .flash.danger { background: #fee2e2; color: #991b1b; }
       .actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: .5rem; }
       .muted { color: var(--muted); }
+
+      .kiosk-card { max-width: 620px; }
+      .kiosk-clock-wrap { margin-top: .25rem; margin-bottom: 1rem; }
+      .kiosk-clock { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+      .kiosk-btn.in { background: #15803d; }
+      .kiosk-btn.out { background: #b91c1c; }
+      .kiosk-btn.pause { background: #f59e0b; color: #2f2400; }
+      .kiosk-btn.resume { background: #15803d; }
+      .kiosk-btn.is-dimmed { opacity: .55; }
+      .kiosk-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .65rem;
+        padding: .95rem 1.1rem;
+        font-size: 1.8rem;
+        font-weight: 700;
+      }
+      .punch-actions { max-width: 560px; }
+      .kiosk-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .kiosk-icon svg {
+        width: 1.35rem;
+        height: 1.35rem;
+        stroke-width: 2.4;
+      }
+      .kiosk-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+      .theme-toggle { display: inline-flex; gap: .35rem; }
+      .theme-btn { width: auto; padding: .45rem .62rem; border-radius: 999px; background: transparent; color: var(--text); border: 1px solid var(--border); }
+      .theme-btn.is-selected { background: var(--panel); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+      .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
+      .status-pill.status-in { background: #15803d; }
+      .status-pill.status-out { background: #b91c1c; }
+      .kiosk-history ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+      .kiosk-history li { margin-bottom: .25rem; }
+
+      .report-btn {
+        width: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: .5rem;
+        background: transparent;
+        color: #f59e0b;
+        border: 1px solid #f59e0b;
+        margin-top: 1rem;
+      }
+
+      .report-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, .55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        z-index: 20;
+      }
+
+      .report-modal.is-open { display: flex; }
+
+      .report-modal-content {
+        width: min(100%, 620px);
+        max-height: calc(100vh - 2rem);
+        overflow: auto;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem;
+      }
+
+      .report-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+      }
+
+      .close-modal-btn {
+        width: auto;
+        border-radius: 999px;
+        padding: .3rem .65rem;
+        font-size: 1.15rem;
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .incident-type-btn {
+        margin-top: .55rem;
+        font-weight: 700;
+      }
+
+      .incident-type-btn.manual { background: #facc15; color: #3f2e00; }
+      .incident-type-btn.wrong { background: #dc2626; }
+      .incident-type-btn.other { background: #2563eb; }
+
+      .incident-form {
+        margin-top: .75rem;
+        padding: .8rem;
+        border: 1px dashed var(--border);
+        border-radius: 9px;
+        display: none;
+      }
+
+      .incident-form.is-visible { display: block; }
+
+      .incident-form textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .incident-actions {
+        margin-top: .8rem;
+        display: flex;
+        justify-content: flex-end;
+        gap: .6rem;
+      }
+
+      .incident-actions button {
+        width: auto;
+        min-width: 110px;
+      }
+
+      .incident-cancel {
+        background: transparent;
+        border: 1px solid #f59e0b;
+        color: #f59e0b;
+      }
+
+      .incident-send { background: #15803d; }
     </style>
   </head>
   <body>
@@ -76,8 +225,8 @@
       <nav>
         {% if current_user.is_authenticated %}
           <a href="{{ url_for('employee.me_today') }}">Me</a>
+          <a href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
           <a href="{{ url_for('admin.employees_list') }}">Admin</a>
-          <a href="{{ url_for('kiosk.kiosk_index') }}">Kiosk</a>
           <a href="{{ url_for('auth.select_tenant') }}">Tenant</a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -98,4 +247,3 @@
     </main>
   </body>
 </html>
-

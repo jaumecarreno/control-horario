@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.extensions import db
 from app.forms import LoginForm, TenantSelectForm
 from app.models import Membership, Tenant, User
+from app.tenant import landing_endpoint_for_membership
 from app.security import verify_secret
 
 
@@ -46,15 +47,15 @@ def login():
 
         login_user(user, remember=form.remember.data)
         session.pop("active_tenant_id", None)
-        session.pop("kiosk_employee_id", None)
 
         db.session.info["actor_user_id"] = str(user.id)
         db.session.info["tenant_id"] = NO_TENANT_UUID
         db.session.rollback()
         memberships = db.session.execute(select(Membership).where(Membership.user_id == user.id)).scalars().all()
         if len(memberships) == 1:
-            session["active_tenant_id"] = str(memberships[0].tenant_id)
-            return redirect(url_for("employee.me_today"))
+            membership = memberships[0]
+            session["active_tenant_id"] = str(membership.tenant_id)
+            return redirect(url_for(landing_endpoint_for_membership(membership)))
 
         next_url = request.args.get("next")
         if _is_safe_next(next_url):
@@ -69,7 +70,6 @@ def login():
 def logout():
     logout_user()
     session.pop("active_tenant_id", None)
-    session.pop("kiosk_employee_id", None)
     flash("Signed out.", "info")
     return redirect(url_for("auth.login"))
 
@@ -92,8 +92,9 @@ def select_tenant():
     form.tenant_id.choices = [(str(membership.tenant_id), tenant.name) for membership, tenant in membership_rows]
 
     if request.method == "GET" and len(membership_rows) == 1:
-        session["active_tenant_id"] = str(membership_rows[0][0].tenant_id)
-        return redirect(url_for("employee.me_today"))
+        membership = membership_rows[0][0]
+        session["active_tenant_id"] = str(membership.tenant_id)
+        return redirect(url_for(landing_endpoint_for_membership(membership)))
 
     if form.validate_on_submit():
         allowed_tenant_ids = {str(membership.tenant_id) for membership, _ in membership_rows}
@@ -102,7 +103,7 @@ def select_tenant():
             return render_template("auth/select_tenant.html", form=form, memberships=membership_rows), 403
 
         session["active_tenant_id"] = form.tenant_id.data
-        session.pop("kiosk_employee_id", None)
-        return redirect(url_for("employee.me_today"))
+        chosen_membership = next((membership for membership, _ in membership_rows if str(membership.tenant_id) == form.tenant_id.data), None)
+        return redirect(url_for(landing_endpoint_for_membership(chosen_membership)))
 
     return render_template("auth/select_tenant.html", form=form, memberships=membership_rows)

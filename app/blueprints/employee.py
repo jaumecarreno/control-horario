@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from calendar import monthrange
+from datetime import date, datetime, time, timedelta, timezone
 import uuid
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import select
 
@@ -25,19 +27,32 @@ ACTION_MAP = {
     "break-end": TimeEventType.BREAK_END,
 }
 
-ACTION_LABELS = {
-    "in": "Punch in",
-    "out": "Punch out",
-    "break-start": "Start break",
-    "break-end": "End break",
-}
+
+PUNCH_BUTTONS = [
+    {"slug": "in", "label": "Registrar ENTRADA", "class": "in"},
+    {"slug": "out", "label": "Registrar SALIDA", "class": "out"},
+]
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
-    now = datetime.now(timezone.utc)
-    start = datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
-    end = datetime.combine(now.date(), time.max, tzinfo=timezone.utc)
-    return start, end
+    tz = _app_timezone()
+    now_local = datetime.now(tz)
+    start_local = datetime.combine(now_local.date(), time.min, tzinfo=tz)
+    end_local = datetime.combine(now_local.date(), time.max, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _app_timezone() -> ZoneInfo:
+    tz_name = current_app.config.get("APP_TIMEZONE", "Europe/Madrid")
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def _to_app_tz(ts: datetime) -> datetime:
+    aware_ts = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return aware_ts.astimezone(_app_timezone())
 
 
 def _employee_for_current_user() -> Employee:
@@ -61,30 +76,153 @@ def _todays_events(employee_id: uuid.UUID) -> list[TimeEvent]:
     return list(db.session.execute(stmt).scalars().all())
 
 
-def _available_actions(events: list[TimeEvent]) -> list[dict[str, str]]:
+def _current_presence_state(events: list[TimeEvent]) -> str:
     if not events:
-        keys = ["in"]
-    else:
-        last = events[-1].type
-        if last == TimeEventType.IN:
-            keys = ["break-start", "out"]
-        elif last == TimeEventType.OUT:
-            keys = ["in"]
-        elif last == TimeEventType.BREAK_START:
-            keys = ["break-end"]
-        else:
-            keys = ["break-start", "out"]
-    return [{"slug": key, "label": ACTION_LABELS[key]} for key in keys]
+        return "SALIDA"
+
+    last_type = events[-1].type
+    if last_type == TimeEventType.IN:
+        return "ENTRADA"
+    if last_type == TimeEventType.OUT:
+        return "SALIDA"
+
+    # Break events keep the most recent in/out state.
+    for event in reversed(events[:-1]):
+        if event.type == TimeEventType.IN:
+            return "ENTRADA"
+        if event.type == TimeEventType.OUT:
+            return "SALIDA"
+    return "SALIDA"
+
+
+def _recent_punches(events: list[TimeEvent]) -> list[dict[str, str]]:
+    rows = []
+    for event in reversed(events):
+        is_manual = bool((event.meta_json or {}).get("manual"))
+        event_local_ts = _to_app_tz(event.ts)
+        if event.type == TimeEventType.IN:
+            rows.append({"label": "Entrada", "ts": event_local_ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
+        elif event.type == TimeEventType.OUT:
+            rows.append({"label": "Salida", "ts": event_local_ts.strftime("%H:%M:%S"), "manual": " · Manual" if is_manual else ""})
+        if len(rows) == 5:
+            break
+    return rows
+
+
+def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
+    tz = _app_timezone()
+    start = datetime(year=year, month=month, day=1, tzinfo=tz)
+    days_in_month = monthrange(year, month)[1]
+    end = datetime(year=year, month=month, day=days_in_month, hour=23, minute=59, second=59, microsecond=999999, tzinfo=tz)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool]:
+    entries_and_exits: list[str] = []
+    worked_minutes = 0
+    open_entry: TimeEvent | None = None
+    includes_manual = False
+
+    for event in events:
+        if event.type != TimeEventType.IN and event.type != TimeEventType.OUT:
+            continue
+
+        if event.type == TimeEventType.IN:
+            open_entry = event
+            continue
+
+        if open_entry is None:
+            continue
+
+        delta = event.ts - open_entry.ts
+        worked_minutes += max(0, int(delta.total_seconds() // 60))
+        pair_has_manual = bool((open_entry.meta_json or {}).get("manual")) or bool((event.meta_json or {}).get("manual"))
+        if pair_has_manual:
+            includes_manual = True
+        pair_label = f"{_to_app_tz(open_entry.ts).strftime('%H:%M')} → {_to_app_tz(event.ts).strftime('%H:%M')}"
+        if pair_has_manual:
+            pair_label += " (Manual)"
+        entries_and_exits.append(pair_label)
+        open_entry = None
+
+    return worked_minutes, entries_and_exits, includes_manual
+
+
+def _daily_pause_minutes(events: list[TimeEvent]) -> tuple[int, list[str]]:
+    pause_minutes = 0
+    pause_pairs: list[str] = []
+    open_pause: TimeEvent | None = None
+
+    for event in events:
+        if event.type == TimeEventType.BREAK_START:
+            open_pause = event
+            continue
+
+        if event.type != TimeEventType.BREAK_END or open_pause is None:
+            continue
+
+        delta = event.ts - open_pause.ts
+        pause_minutes += max(0, int(delta.total_seconds() // 60))
+        pause_pairs.append(f"{_to_app_tz(open_pause.ts).strftime('%H:%M')} → {_to_app_tz(event.ts).strftime('%H:%M')}")
+        open_pause = None
+
+    return pause_minutes, pause_pairs
+
+
+def _pause_summary(events: list[TimeEvent]) -> tuple[bool, int, int]:
+    total_paused_seconds = 0
+    open_pause: TimeEvent | None = None
+
+    for event in events:
+        if event.type == TimeEventType.BREAK_START:
+            open_pause = event
+            continue
+
+        if event.type == TimeEventType.BREAK_END and open_pause is not None:
+            total_paused_seconds += max(0, int((event.ts - open_pause.ts).total_seconds()))
+            open_pause = None
+
+    if open_pause is None:
+        return False, 0, total_paused_seconds // 60
+
+    pause_start = open_pause.ts if open_pause.ts.tzinfo else open_pause.ts.replace(tzinfo=timezone.utc)
+    running_seconds = max(0, int((datetime.now(timezone.utc) - pause_start).total_seconds()))
+    total_paused_seconds += running_seconds
+    return True, running_seconds, total_paused_seconds // 60
+
+
+def _seconds_to_hhmmss(seconds: int) -> str:
+    total = max(0, seconds)
+    return f"{total // 3600:02d}:{(total % 3600) // 60:02d}:{total % 60:02d}"
+
+
+def _minutes_to_hhmm(minutes: int) -> str:
+    sign = "-" if minutes < 0 else ""
+    total = abs(minutes)
+    return f"{sign}{total // 60:02d}:{total % 60:02d}"
+
+
+def _enum_value(value: object, fallback: str = "") -> str:
+    if value is None:
+        return fallback
+    return getattr(value, "value", str(value))
 
 
 def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
+    pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     return render_template(
         "employee/_punch_state.html",
         employee=employee,
         events=events,
         last_event=events[-1] if events else None,
-        available_actions=_available_actions(events),
+        punch_buttons=PUNCH_BUTTONS,
+        current_state=current_state,
+        recent_punches=_recent_punches(events),
+        pause_active=pause_active,
+        running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
+        paused_today=_minutes_to_hhmm(paused_today_minutes),
     )
 
 
@@ -94,13 +232,52 @@ def _render_punch_state(employee: Employee):
 def me_today():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
+    pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     return render_template(
         "employee/today.html",
         employee=employee,
         events=events,
         last_event=events[-1] if events else None,
-        available_actions=_available_actions(events),
+        punch_buttons=PUNCH_BUTTONS,
+        current_state=current_state,
+        recent_punches=_recent_punches(events),
+        pause_active=pause_active,
+        running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
+        paused_today=_minutes_to_hhmm(paused_today_minutes),
     )
+
+
+@bp.post("/me/pause/toggle")
+@login_required
+@tenant_required
+def toggle_pause():
+    employee = _employee_for_current_user()
+    events = _todays_events(employee.id)
+    pause_active, _, _ = _pause_summary(events)
+    event_type = TimeEventType.BREAK_END if pause_active else TimeEventType.BREAK_START
+
+    event = TimeEvent(
+        tenant_id=employee.tenant_id,
+        employee_id=employee.id,
+        type=event_type,
+        source=TimeEventSource.WEB,
+        meta_json={"via": "employee_pause_control"},
+    )
+    db.session.add(event)
+    db.session.flush()
+    log_audit(
+        action=f"PUNCH_{event_type.value}",
+        entity_type="time_events",
+        entity_id=event.id,
+        payload={"employee_id": str(employee.id), "source": "WEB"},
+    )
+    db.session.commit()
+
+    if request.headers.get("HX-Request") == "true":
+        return _render_punch_state(employee)
+
+    return redirect(url_for("employee.me_today"))
 
 
 @bp.post("/me/punch/<string:action>")
@@ -112,6 +289,18 @@ def punch_action(action: str):
         abort(404)
 
     employee = _employee_for_current_user()
+    events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
+    requested_state = "ENTRADA" if action == "in" else "SALIDA" if action == "out" else None
+    allow_repeat = request.form.get("confirm_repeat") == "1"
+
+    if requested_state == current_state and not allow_repeat:
+        if request.headers.get("HX-Request") == "true":
+            return _render_punch_state(employee)
+
+        flash("Marcaje cancelado.", "info")
+        return redirect(url_for("employee.me_today"))
+
     event = TimeEvent(
         tenant_id=employee.tenant_id,
         employee_id=employee.id,
@@ -144,6 +333,197 @@ def me_events():
     stmt = select(TimeEvent).where(TimeEvent.employee_id == employee.id).order_by(TimeEvent.ts.desc()).limit(100)
     events = list(db.session.execute(stmt).scalars().all())
     return render_template("employee/events.html", employee=employee, events=events)
+
+
+@bp.post("/me/incidents/manual")
+@login_required
+@tenant_required
+def create_manual_punch():
+    employee = _employee_for_current_user()
+    requested_date = request.form.get("manual_date", "")
+    requested_hour = request.form.get("manual_hour", "")
+    requested_minute = request.form.get("manual_minute", "")
+    requested_kind = request.form.get("manual_kind", "")
+
+    try:
+        event_date = date.fromisoformat(requested_date)
+        hour = int(requested_hour)
+        minute = int(requested_minute)
+    except (TypeError, ValueError):
+        flash("Fecha u hora inválida para el fichaje manual.", "danger")
+        return redirect(url_for("employee.me_today"))
+
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        flash("La hora manual debe estar entre 00:00 y 23:59.", "danger")
+        return redirect(url_for("employee.me_today"))
+
+    event_type = TimeEventType.IN if requested_kind == "IN" else TimeEventType.OUT if requested_kind == "OUT" else None
+    if event_type is None:
+        flash("Tipo de fichaje manual inválido.", "danger")
+        return redirect(url_for("employee.me_today"))
+
+    event_local_ts = datetime.combine(event_date, time(hour=hour, minute=minute), tzinfo=_app_timezone())
+    event_ts = event_local_ts.astimezone(timezone.utc)
+    event = TimeEvent(
+        tenant_id=employee.tenant_id,
+        employee_id=employee.id,
+        type=event_type,
+        source=TimeEventSource.WEB,
+        ts=event_ts,
+        meta_json={"via": "employee_manual_incident", "manual": True},
+    )
+    db.session.add(event)
+    db.session.flush()
+    log_audit(
+        action=f"PUNCH_{event_type.value}_MANUAL",
+        entity_type="time_events",
+        entity_id=event.id,
+        payload={"employee_id": str(employee.id), "source": "WEB", "manual": True},
+    )
+    db.session.commit()
+
+    flash("Fichaje manual registrado correctamente.", "success")
+    return redirect(url_for("employee.presence_control"))
+
+
+@bp.get("/me/presence-control")
+@login_required
+@tenant_required
+def presence_control():
+    employee = _employee_for_current_user()
+    requested_month = request.args.get("month")
+
+    if requested_month:
+        try:
+            selected_year, selected_month = map(int, requested_month.split("-", 1))
+        except ValueError:
+            now = datetime.now(_app_timezone())
+            selected_year = now.year
+            selected_month = now.month
+    else:
+        now = datetime.now(_app_timezone())
+        selected_year = now.year
+        selected_month = now.month
+
+    month_start, month_end = _month_bounds_utc(selected_year, selected_month)
+    month_events_stmt = (
+        select(TimeEvent)
+        .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= month_start, TimeEvent.ts <= month_end)
+        .order_by(TimeEvent.ts.asc())
+    )
+    month_events = list(db.session.execute(month_events_stmt).scalars().all())
+    events_by_day: dict[date, list[TimeEvent]] = {}
+    for event in month_events:
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
+
+    month_rows = []
+    month_worked = 0
+    month_expected = 0
+    for day_index in range(monthrange(selected_year, selected_month)[1]):
+        current_day = date(selected_year, selected_month, day_index + 1)
+        day_events = events_by_day.get(current_day, [])
+        worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
+        expected_minutes = 450 if current_day.weekday() < 5 else 0
+        month_worked += worked_minutes
+        month_expected += expected_minutes
+        month_rows.append(
+            {
+                "day": current_day,
+                "pairs": day_pairs,
+                "worked": worked_minutes,
+                "expected": expected_minutes,
+                "balance": worked_minutes - expected_minutes,
+                "has_manual": includes_manual,
+            }
+        )
+
+    recent_stmt = select(TimeEvent).where(TimeEvent.employee_id == employee.id).order_by(TimeEvent.ts.desc()).limit(12)
+    recent_events = list(db.session.execute(recent_stmt).scalars().all())
+    prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
+    next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+
+    return render_template(
+        "employee/presence_control.html",
+        employee=employee,
+        month_rows=month_rows,
+        selected_month=f"{selected_year:04d}-{selected_month:02d}",
+        month_label=month_start.strftime("%B %Y"),
+        month_worked=_minutes_to_hhmm(month_worked),
+        month_expected=_minutes_to_hhmm(month_expected),
+        month_balance=_minutes_to_hhmm(month_worked - month_expected),
+        recent_events=recent_events,
+        to_app_tz=_to_app_tz,
+        prev_month=prev_month,
+        next_month=next_month,
+        minutes_to_hhmm=_minutes_to_hhmm,
+    )
+
+
+@bp.get("/me/pause-control")
+@login_required
+@tenant_required
+def pause_control():
+    employee = _employee_for_current_user()
+    requested_month = request.args.get("month")
+
+    if requested_month:
+        try:
+            selected_year, selected_month = map(int, requested_month.split("-", 1))
+        except ValueError:
+            now = datetime.now(_app_timezone())
+            selected_year = now.year
+            selected_month = now.month
+    else:
+        now = datetime.now(_app_timezone())
+        selected_year = now.year
+        selected_month = now.month
+
+    month_start, month_end = _month_bounds_utc(selected_year, selected_month)
+    month_events_stmt = (
+        select(TimeEvent)
+        .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= month_start, TimeEvent.ts <= month_end)
+        .order_by(TimeEvent.ts.asc())
+    )
+    month_events = list(db.session.execute(month_events_stmt).scalars().all())
+    events_by_day: dict[date, list[TimeEvent]] = {}
+    for event in month_events:
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
+
+    month_rows = []
+    month_paused = 0
+    month_expected = 0
+    for day_index in range(monthrange(selected_year, selected_month)[1]):
+        current_day = date(selected_year, selected_month, day_index + 1)
+        day_events = events_by_day.get(current_day, [])
+        paused_minutes, day_pairs = _daily_pause_minutes(day_events)
+        expected_minutes = 30 if current_day.weekday() < 5 else 0
+        month_paused += paused_minutes
+        month_expected += expected_minutes
+        month_rows.append(
+            {
+                "day": current_day,
+                "pairs": day_pairs,
+                "paused": paused_minutes,
+                "expected": expected_minutes,
+                "balance": paused_minutes - expected_minutes,
+            }
+        )
+
+    prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
+    next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+
+    return render_template(
+        "employee/pause_control.html",
+        employee=employee,
+        month_rows=month_rows,
+        month_label=month_start.strftime("%B %Y"),
+        month_paused=_minutes_to_hhmm(month_paused),
+        month_expected=_minutes_to_hhmm(month_expected),
+        month_balance=_minutes_to_hhmm(month_paused - month_expected),
+        prev_month=prev_month,
+        next_month=next_month,
+        minutes_to_hhmm=_minutes_to_hhmm,
+    )
 
 
 @bp.route("/me/leaves", methods=["GET", "POST"])

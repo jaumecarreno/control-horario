@@ -1,42 +1,306 @@
-<div id="punch-state">
-  {% if last_event %}
-    <p>Last event: <strong>{{ last_event.type.value }}</strong> at {{ last_event.ts }}</p>
-  {% else %}
-    <p>No events yet today.</p>
-  {% endif %}
-  <div class="actions">
-    {% for action in available_actions %}
+<div id="punch-state" data-current-state="{{ current_state }}">
+  <div class="kiosk-toolbar">
+    <div class="kiosk-clock-wrap">
+      <p class="muted">Hora actual</p>
+      <div class="kiosk-clock" id="live-clock">--:--:--</div>
+    </div>
+
+    <div class="theme-toggle" role="group" aria-label="Cambiar tema">
+      <button type="button" class="theme-btn" data-theme-choice="light" title="Modo claro" aria-label="Modo claro">☀️</button>
+      <button type="button" class="theme-btn" data-theme-choice="dark" title="Modo oscuro" aria-label="Modo oscuro">🌙</button>
+    </div>
+  </div>
+
+  <p>
+    Estado actual:
+    <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
+  </p>
+
+  <div class="actions punch-actions">
+    {% for button in punch_buttons %}
+      {% set is_dimmed = (current_state == 'ENTRADA' and button.slug == 'in') or (current_state == 'SALIDA' and button.slug == 'out') %}
       <form
         method="post"
-        action="{{ url_for('employee.punch_action', action=action.slug) }}"
-        hx-post="{{ url_for('employee.punch_action', action=action.slug) }}"
+        action="{{ url_for('employee.punch_action', action=button.slug) }}"
+        hx-post="{{ url_for('employee.punch_action', action=button.slug) }}"
         hx-target="#punch-state"
         hx-swap="outerHTML"
+        onsubmit="return confirmDimmedAction(event, '{{ button.slug }}', {{ 'true' if is_dimmed else 'false' }})"
       >
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit">{{ action.label }}</button>
+        <input type="hidden" name="confirm_repeat" value="0">
+        <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
+          <span class="kiosk-icon" aria-hidden="true">
+            {% if button.slug == 'in' %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% else %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% endif %}
+          </span>
+          {{ button.label }}
+        </button>
       </form>
     {% endfor %}
   </div>
-  {% if events %}
-    <table style="margin-top: 1rem;">
-      <thead>
-        <tr>
-          <th>Timestamp</th>
-          <th>Type</th>
-          <th>Source</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for event in events %}
-          <tr>
-            <td>{{ event.ts }}</td>
-            <td>{{ event.type.value }}</td>
-            <td>{{ event.source.value }}</td>
-          </tr>
+
+  <div class="kiosk-history" style="margin-top: 1rem;">
+    <h3 style="margin-bottom: .25rem;">Historial reciente</h3>
+    {% if recent_punches %}
+      <ul>
+        {% for row in recent_punches %}
+          <li>{{ row.label }} - {{ row.ts }}{{ row.manual }}</li>
         {% endfor %}
-      </tbody>
-    </table>
+      </ul>
+    {% else %}
+      <p class="muted">Sin marcajes de entrada/salida hoy.</p>
+    {% endif %}
+  </div>
+
+
+  <button type="button" class="report-btn" id="open-report-modal">
+    <span aria-hidden="true">⚠️</span>
+    Reportar incidencia
+  </button>
+
+  <form
+    method="post"
+    action="{{ url_for('employee.toggle_pause') }}"
+    hx-post="{{ url_for('employee.toggle_pause') }}"
+    hx-target="#punch-state"
+    hx-swap="outerHTML"
+    style="margin-top:.7rem;"
+  >
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="kiosk-btn {% if pause_active %}resume{% else %}pause{% endif %}">
+      <span class="kiosk-icon" aria-hidden="true">
+        {% if pause_active %}
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 6V18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 6L18 12L8 18V6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        {% else %}
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M9 4H7V20H9V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M17 4H15V20H17V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        {% endif %}
+      </span>
+      {% if pause_active %}Reanudar{% else %}Registrar PAUSA{% endif %}
+    </button>
+  </form>
+
+  {% if pause_active %}
+    <p style="margin-top:.6rem;">Tiempo en Pausa: <strong id="pause-live-time">{{ running_pause_time }}</strong></p>
   {% endif %}
+  <p style="margin-top:.6rem;">Pausas hoy: <strong>{{ paused_today }}</strong></p>
 </div>
 
+<div class="report-modal" id="report-modal" aria-hidden="true">
+  <div class="report-modal-content" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+    <div class="report-modal-header">
+      <h3 id="report-modal-title" style="margin: 0;">Reportar incidencia</h3>
+      <button type="button" class="close-modal-btn" id="close-report-modal" aria-label="Cerrar ventana">✕</button>
+    </div>
+
+    <button type="button" class="incident-type-btn manual" data-form-target="manual-form">Me he olvidado fichar</button>
+    <div class="incident-form" id="manual-form">
+      <form method="post" action="{{ url_for('employee.create_manual_punch') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="manual-date">Fecha del fichaje</label>
+      <input type="date" id="manual-date" name="manual_date" required>
+
+      <div class="actions" style="margin-top: .5rem;">
+        <div>
+          <label for="manual-hour">Hora</label>
+          <input type="number" id="manual-hour" name="manual_hour" min="0" max="23" placeholder="HH" required>
+        </div>
+        <div>
+          <label for="manual-minute">Minutos</label>
+          <input type="number" id="manual-minute" name="manual_minute" min="0" max="59" placeholder="MM" required>
+        </div>
+      </div>
+
+      <label for="manual-kind">Tipo</label>
+      <select id="manual-kind" name="manual_kind" required>
+        <option value="IN">Entrada</option>
+        <option value="OUT">Salida</option>
+      </select>
+
+      <p class="muted" style="margin-bottom: 0;">Este fichaje se registrará como WEB - MANUAL.</p>
+
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="submit" class="incident-send">Enviar</button>
+      </div>
+      </form>
+    </div>
+
+    <button type="button" class="incident-type-btn wrong" data-form-target="wrong-form">Fichaje incorrecto</button>
+    <div class="incident-form" id="wrong-form">
+      <label for="wrong-description">Detalle</label>
+      <textarea id="wrong-description" placeholder="Describe brevemente lo ocurrido..."></textarea>
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="button" class="incident-send" data-send-demo="wrong">Enviar (demo)</button>
+      </div>
+    </div>
+
+    <button type="button" class="incident-type-btn other" data-form-target="other-form">Otro motivo</button>
+    <div class="incident-form" id="other-form">
+      <label for="other-description">Detalle</label>
+      <textarea id="other-description" placeholder="Cuéntanos el motivo..."></textarea>
+      <div class="incident-actions">
+        <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
+        <button type="button" class="incident-send" data-send-demo="other">Enviar (demo)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function updateClock() {
+      const clockEl = document.getElementById("live-clock");
+      if (!clockEl) return;
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      clockEl.textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    function updatePauseClock() {
+      const pauseClockEl = document.getElementById("pause-live-time");
+      if (!pauseClockEl) return;
+      const [hh, mm, ss] = pauseClockEl.textContent.split(":").map((part) => Number(part || "0"));
+      const totalSeconds = (hh * 3600) + (mm * 60) + ss + 1;
+      const nextHh = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+      const nextMm = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+      const nextSs = String(totalSeconds % 60).padStart(2, "0");
+      pauseClockEl.textContent = `${nextHh}:${nextMm}:${nextSs}`;
+    }
+
+    function applyTheme(themeName) {
+      document.documentElement.setAttribute("data-theme", themeName);
+      window.localStorage.setItem("control-horario-theme", themeName);
+      document.querySelectorAll(".theme-btn").forEach((node) => {
+        node.classList.toggle("is-selected", node.dataset.themeChoice === themeName);
+      });
+    }
+
+    const savedTheme = window.localStorage.getItem("control-horario-theme") || "dark";
+    applyTheme(savedTheme);
+
+    document.querySelectorAll(".theme-btn").forEach((node) => {
+      node.addEventListener("click", () => applyTheme(node.dataset.themeChoice));
+    });
+
+    updateClock();
+    if (window.__clockInterval) {
+      clearInterval(window.__clockInterval);
+    }
+    window.__clockInterval = setInterval(updateClock, 1000);
+
+    if (window.__pauseClockInterval) {
+      clearInterval(window.__pauseClockInterval);
+    }
+    window.__pauseClockInterval = setInterval(updatePauseClock, 1000);
+
+    const reportModal = document.getElementById("report-modal");
+    const openModalBtn = document.getElementById("open-report-modal");
+    const closeModalBtn = document.getElementById("close-report-modal");
+
+    function closeReportModal() {
+      if (!reportModal) return;
+      reportModal.classList.remove("is-open");
+      reportModal.setAttribute("aria-hidden", "true");
+    }
+
+    function openReportModal() {
+      if (!reportModal) return;
+      reportModal.classList.add("is-open");
+      reportModal.setAttribute("aria-hidden", "false");
+    }
+
+    function showIncidentForm(targetId) {
+      document.querySelectorAll(".incident-form").forEach((form) => {
+        form.classList.toggle("is-visible", form.id === targetId);
+      });
+    }
+
+    if (openModalBtn) {
+      openModalBtn.addEventListener("click", openReportModal);
+    }
+
+    if (closeModalBtn) {
+      closeModalBtn.addEventListener("click", closeReportModal);
+    }
+
+    if (reportModal) {
+      reportModal.addEventListener("click", (event) => {
+        if (event.target === reportModal) {
+          closeReportModal();
+        }
+      });
+    }
+
+    document.querySelectorAll("[data-form-target]").forEach((button) => {
+      button.addEventListener("click", () => showIncidentForm(button.dataset.formTarget));
+    });
+
+    document.querySelectorAll("[data-close-modal='true']").forEach((button) => {
+      button.addEventListener("click", closeReportModal);
+    });
+
+    document.querySelectorAll("[data-send-demo]").forEach((button) => {
+      button.addEventListener("click", closeReportModal);
+    });
+
+    const manualDateInput = document.getElementById("manual-date");
+    if (manualDateInput && !manualDateInput.value) {
+      manualDateInput.value = new Date().toISOString().split("T")[0];
+    }
+
+    const manualForm = document.querySelector("#manual-form form");
+    if (manualForm) {
+      manualForm.addEventListener("submit", () => closeReportModal());
+    }
+  })();
+
+  function confirmDimmedAction(event, action, isDimmed) {
+    if (!isDimmed) {
+      return true;
+    }
+
+    const stateEl = document.getElementById("punch-state");
+    const currentState = stateEl ? stateEl.dataset.currentState : "";
+
+    if (action === "in" && currentState === "ENTRADA") {
+      const confirmed = window.confirm("Ya estás en ENTRADA. No deberías pulsar REGISTRAR ENTRADA. ¿Quieres continuar?");
+      if (confirmed) {
+        const input = event.target.querySelector('input[name="confirm_repeat"]');
+        if (input) input.value = "1";
+      }
+      return confirmed;
+    }
+
+    if (action === "out" && currentState === "SALIDA") {
+      const confirmed = window.confirm("Ya estás en SALIDA. No deberías pulsar REGISTRAR SALIDA. ¿Quieres continuar?");
+      if (confirmed) {
+        const input = event.target.querySelector('input[name="confirm_repeat"]');
+        if (input) input.value = "1";
+      }
+      return confirmed;
+    }
+
+    return true;
+  }
+</script>

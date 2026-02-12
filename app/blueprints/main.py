@@ -5,6 +5,7 @@ from __future__ import annotations
 from flask import Blueprint, redirect, session, url_for
 from flask_login import current_user
 
+from app.tenant import current_membership, landing_endpoint_for_membership
 
 bp = Blueprint("main", __name__)
 
@@ -15,7 +16,7 @@ def index():
         return redirect(url_for("auth.login"))
     if not session.get("active_tenant_id"):
         return redirect(url_for("auth.select_tenant"))
-    return redirect(url_for("employee.me_today"))
+    return redirect(url_for(landing_endpoint_for_membership(current_membership())))
 
 
 @bp.get("/health")
