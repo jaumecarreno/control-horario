@@ -7,9 +7,10 @@ import io
 from datetime import datetime, time, timezone
 from uuid import UUID
 
-from flask import Blueprint, abort, flash, make_response, redirect, render_template, url_for
+from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.extensions import db
@@ -98,7 +99,17 @@ def shifts():
 
 
 def _render_turnos():
-    rows = list(db.session.execute(select(Shift).order_by(Shift.name.asc())).scalars().all())
+    try:
+        rows = list(db.session.execute(select(Shift).order_by(Shift.name.asc())).scalars().all())
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Shift list failed. Falling back to empty list. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        flash("No se pudieron cargar los turnos. Revisa migraciones pendientes (alembic upgrade head).", "warning")
+        rows = []
     return render_template("admin/shifts.html", rows=rows, shift_frequency_labels=SHIFT_FREQUENCY_LABELS)
 
 
@@ -117,40 +128,48 @@ def shifts_new():
         if not shift_name:
             flash("El nombre del turno es obligatorio.", "danger")
             return render_template("admin/shift_new.html", form=form)
+        try:
+            existing_shift = db.session.execute(
+                select(Shift).where(Shift.tenant_id == tenant_id, Shift.name == shift_name)
+            ).scalar_one_or_none()
+            if existing_shift is not None:
+                flash("Ya existe un turno con ese nombre.", "warning")
+                return render_template("admin/shift_new.html", form=form)
 
-        existing_shift = db.session.execute(
-            select(Shift).where(Shift.tenant_id == tenant_id, Shift.name == shift_name)
-        ).scalar_one_or_none()
-        if existing_shift is not None:
-            flash("Ya existe un turno con ese nombre.", "warning")
+            expected_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
+            shift = Shift(
+                tenant_id=tenant_id,
+                name=shift_name,
+                break_counts_as_worked_bool=bool(form.break_counts_as_worked_bool.data),
+                break_minutes=int(form.break_minutes.data),
+                expected_hours=form.expected_hours.data,
+                expected_hours_frequency=expected_frequency,
+            )
+            db.session.add(shift)
+            db.session.flush()
+            log_audit(
+                action="SHIFT_CREATED",
+                entity_type="shifts",
+                entity_id=shift.id,
+                payload={
+                    "name": shift.name,
+                    "break_counts_as_worked_bool": shift.break_counts_as_worked_bool,
+                    "break_minutes": shift.break_minutes,
+                    "expected_hours": str(shift.expected_hours),
+                    "expected_hours_frequency": shift.expected_hours_frequency.value,
+                },
+            )
+            db.session.commit()
+            flash("Turno creado.", "success")
+            return redirect(url_for("admin.shifts"))
+        except (OperationalError, ProgrammingError, LookupError):
+            db.session.rollback()
+            current_app.logger.warning(
+                "Shift create failed. Database schema likely out of date.",
+                exc_info=True,
+            )
+            flash("No se pudo crear el turno. Revisa migraciones pendientes (alembic upgrade head).", "danger")
             return render_template("admin/shift_new.html", form=form)
-
-        expected_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
-        shift = Shift(
-            tenant_id=tenant_id,
-            name=shift_name,
-            break_counts_as_worked_bool=bool(form.break_counts_as_worked_bool.data),
-            break_minutes=int(form.break_minutes.data),
-            expected_hours=form.expected_hours.data,
-            expected_hours_frequency=expected_frequency,
-        )
-        db.session.add(shift)
-        db.session.flush()
-        log_audit(
-            action="SHIFT_CREATED",
-            entity_type="shifts",
-            entity_id=shift.id,
-            payload={
-                "name": shift.name,
-                "break_counts_as_worked_bool": shift.break_counts_as_worked_bool,
-                "break_minutes": shift.break_minutes,
-                "expected_hours": str(shift.expected_hours),
-                "expected_hours_frequency": shift.expected_hours_frequency.value,
-            },
-        )
-        db.session.commit()
-        flash("Turno creado.", "success")
-        return redirect(url_for("admin.shifts"))
 
     return render_template("admin/shift_new.html", form=form)
 

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from sqlalchemy import text
+
+from app.extensions import db
+
 
 def _login_admin(client):
     return client.post(
@@ -52,3 +56,18 @@ def test_admin_shift_name_must_be_unique(admin_only_client):
     body = second_response.get_data(as_text=True)
     assert second_response.status_code == 200
     assert "Ya existe un turno con ese nombre." in body
+
+
+def test_admin_turnos_page_handles_missing_shifts_table(admin_only_client):
+    _login_admin(admin_only_client)
+
+    with admin_only_client.application.app_context():
+        db.session.execute(text("DROP TABLE shifts"))
+        db.session.commit()
+
+    shifts_page = admin_only_client.get("/admin/turnos", follow_redirects=False)
+    body = shifts_page.get_data(as_text=True)
+
+    assert shifts_page.status_code == 200
+    assert "No se pudieron cargar los turnos." in body
+    assert "No hay turnos creados." in body
