@@ -99,8 +99,9 @@
 
   {% if pause_active %}
     <p style="margin-top:.6rem;">Tiempo en Pausa: <strong id="pause-live-time">{{ running_pause_time }}</strong></p>
+  {% else %}
+    <p style="margin-top:.6rem;">Pausas hoy: <strong>{{ paused_today }}</strong></p>
   {% endif %}
-  <p style="margin-top:.6rem;">Pausas hoy: <strong>{{ paused_today }}</strong></p>
 </div>
 
 <div class="report-modal" id="report-modal" aria-hidden="true">
