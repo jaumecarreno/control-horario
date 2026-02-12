@@ -216,6 +216,11 @@
       button.addEventListener("click", closeReportModal);
     });
 
+    const manualDateInput = document.getElementById("manual-date");
+    if (manualDateInput && !manualDateInput.value) {
+      manualDateInput.value = new Date().toISOString().split("T")[0];
+    }
+
     const manualForm = document.querySelector("#manual-form form");
     if (manualForm) {
       manualForm.addEventListener("submit", () => closeReportModal());
