@@ -21,6 +21,7 @@
         onsubmit="return confirmDimmedAction(event, '{{ button.slug }}', {{ 'true' if is_dimmed else 'false' }})"
       >
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="confirm_repeat" value="0">
         <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
           <span class="kiosk-icon">{{ button.icon }}</span>
           {{ button.label }}
@@ -71,11 +72,21 @@
     const currentState = stateEl ? stateEl.dataset.currentState : "";
 
     if (action === "in" && currentState === "ENTRADA") {
-      return window.confirm("Ya estás en ENTRADA. No deberías pulsar REGISTRAR ENTRADA. ¿Quieres continuar?");
+      const confirmed = window.confirm("Ya estás en ENTRADA. No deberías pulsar REGISTRAR ENTRADA. ¿Quieres continuar?");
+      if (confirmed) {
+        const input = event.target.querySelector('input[name="confirm_repeat"]');
+        if (input) input.value = "1";
+      }
+      return confirmed;
     }
 
     if (action === "out" && currentState === "SALIDA") {
-      return window.confirm("Ya estás en SALIDA. No deberías pulsar REGISTRAR SALIDA. ¿Quieres continuar?");
+      const confirmed = window.confirm("Ya estás en SALIDA. No deberías pulsar REGISTRAR SALIDA. ¿Quieres continuar?");
+      if (confirmed) {
+        const input = event.target.querySelector('input[name="confirm_repeat"]');
+        if (input) input.value = "1";
+      }
+      return confirmed;
     }
 
     return true;

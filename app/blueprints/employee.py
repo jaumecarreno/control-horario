@@ -27,8 +27,8 @@ ACTION_MAP = {
 
 
 PUNCH_BUTTONS = [
-    {"slug": "in", "label": "Registrar entrada", "icon": "🚪⬅️", "class": "in"},
-    {"slug": "out", "label": "Registrar salida", "icon": "🚪➡️", "class": "out"},
+    {"slug": "in", "label": "Registrar entrada", "icon": "🟢⤵️", "class": "in"},
+    {"slug": "out", "label": "Registrar salida", "icon": "🔴⤴️", "class": "out"},
 ]
 
 
@@ -132,6 +132,18 @@ def punch_action(action: str):
         abort(404)
 
     employee = _employee_for_current_user()
+    events = _todays_events(employee.id)
+    current_state = _current_presence_state(events)
+    requested_state = "ENTRADA" if action == "in" else "SALIDA" if action == "out" else None
+    allow_repeat = request.form.get("confirm_repeat") == "1"
+
+    if requested_state == current_state and not allow_repeat:
+        if request.headers.get("HX-Request") == "true":
+            return _render_punch_state(employee)
+
+        flash("Marcaje cancelado.", "info")
+        return redirect(url_for("employee.me_today"))
+
     event = TimeEvent(
         tenant_id=employee.tenant_id,
         employee_id=employee.id,
