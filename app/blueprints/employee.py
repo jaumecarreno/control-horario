@@ -202,6 +202,12 @@ def _minutes_to_hhmm(minutes: int) -> str:
     return f"{sign}{total // 60:02d}:{total % 60:02d}"
 
 
+def _enum_value(value: object, fallback: str = "") -> str:
+    if value is None:
+        return fallback
+    return getattr(value, "value", str(value))
+
+
 def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
@@ -413,7 +419,8 @@ def presence_control():
     month_rows = []
     month_worked = 0
     month_expected = 0
-    default_expected_daily = employee.shift.expected_hours * 60 if employee.shift and employee.shift.expected_hours_period.value == "DAILY" else 450
+    shift_period = _enum_value(employee.shift.expected_hours_period, fallback="DAILY") if employee.shift else "DAILY"
+    default_expected_daily = employee.shift.expected_hours * 60 if employee.shift and shift_period == "DAILY" else 450
     for day_index in range(monthrange(selected_year, selected_month)[1]):
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
