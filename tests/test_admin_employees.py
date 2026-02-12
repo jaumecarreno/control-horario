@@ -1,0 +1,169 @@
+from __future__ import annotations
+
+from datetime import date
+
+from sqlalchemy import select
+
+from app.extensions import db
+from app.models import Employee, EmployeeShiftAssignment, Shift
+
+
+def _login_admin(client):
+    return client.post(
+        "/login",
+        data={"email": "admin@example.com", "password": "password123"},
+        follow_redirects=False,
+    )
+
+
+def test_admin_can_edit_employee_and_assign_shift(admin_only_client):
+    login_response = _login_admin(admin_only_client)
+    assert login_response.status_code == 302
+
+    create_shift = admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "7.5",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    assert create_shift.status_code == 302
+
+    create_employee = admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Uno",
+            "email": "uno@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+    assert create_employee.status_code == 302
+
+    with admin_only_client.application.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "uno@example.com")).scalar_one()
+        shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        employee_id = employee.id
+        shift_id = shift.id
+
+    update_employee = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Editado",
+            "email": "editado@example.com",
+            "pin": "",
+            "assignment_shift_id": str(shift_id),
+            "assignment_effective_from": "2026-02-01",
+        },
+        follow_redirects=True,
+    )
+    assert update_employee.status_code == 200
+    body = update_employee.get_data(as_text=True)
+    assert "Empleado actualizado." in body
+    assert "Historial de turnos" in body
+
+    with admin_only_client.application.app_context():
+        updated_employee = db.session.get(Employee, employee_id)
+        assert updated_employee is not None
+        assert updated_employee.name == "Empleado Editado"
+        assert updated_employee.email == "editado@example.com"
+
+        assignment = db.session.execute(
+            select(EmployeeShiftAssignment).where(EmployeeShiftAssignment.employee_id == employee_id)
+        ).scalar_one()
+        assert assignment.shift_id == shift_id
+        assert assignment.effective_from == date(2026, 2, 1)
+        assert assignment.effective_to is None
+
+
+def test_admin_shift_reassignment_closes_previous_period(admin_only_client):
+    _login_admin(admin_only_client)
+    admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "7.5",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "Parcial",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "20",
+            "expected_hours": "4",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Dos",
+            "email": "dos@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+
+    with admin_only_client.application.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "dos@example.com")).scalar_one()
+        general = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        parcial = db.session.execute(select(Shift).where(Shift.name == "Parcial")).scalar_one()
+        employee_id = employee.id
+
+    first_assignment = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Dos",
+            "email": "dos@example.com",
+            "pin": "",
+            "active": "y",
+            "assignment_shift_id": str(general.id),
+            "assignment_effective_from": "2026-02-01",
+        },
+        follow_redirects=False,
+    )
+    assert first_assignment.status_code == 302
+
+    second_assignment = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Dos",
+            "email": "dos@example.com",
+            "pin": "",
+            "active": "y",
+            "assignment_shift_id": str(parcial.id),
+            "assignment_effective_from": "2026-02-16",
+        },
+        follow_redirects=False,
+    )
+    assert second_assignment.status_code == 302
+
+    with admin_only_client.application.app_context():
+        rows = list(
+            db.session.execute(
+                select(EmployeeShiftAssignment)
+                .where(EmployeeShiftAssignment.employee_id == employee_id)
+                .order_by(EmployeeShiftAssignment.effective_from.asc())
+            )
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 2
+        assert rows[0].shift_id == general.id
+        assert rows[0].effective_from == date(2026, 2, 1)
+        assert rows[0].effective_to == date(2026, 2, 15)
+        assert rows[1].shift_id == parcial.id
+        assert rows[1].effective_from == date(2026, 2, 16)
+        assert rows[1].effective_to is None

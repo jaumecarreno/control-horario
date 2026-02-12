@@ -12,6 +12,7 @@ from flask_login import UserMixin
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -162,6 +163,23 @@ class Shift(db.Model):
         nullable=False,
         default=ExpectedHoursFrequency.DAILY,
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
+
+
+class EmployeeShiftAssignment(db.Model):
+    __tablename__ = "employee_shift_assignments"
+    __table_args__ = (
+        Index("ix_employee_shift_assignments_tenant_employee_from", "tenant_id", "employee_id", "effective_from"),
+        UniqueConstraint("employee_id", "effective_from", name="uq_employee_shift_assignments_employee_from"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_employee_shift_assignment_dates"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    employee_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    shift_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("shifts.id", ondelete="RESTRICT"), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
 
 

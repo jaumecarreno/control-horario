@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Edit employee</h1>
+    <p class="muted">{{ employee.name }}</p>
+
+    <form method="post">
+      {{ form.hidden_tag() }}
+
+      <label for="{{ form.name.id }}">Name</label>
+      {{ form.name() }}
+
+      <label for="{{ form.email.id }}">Email (optional)</label>
+      {{ form.email() }}
+
+      <label for="{{ form.pin.id }}">New PIN (optional)</label>
+      {{ form.pin() }}
+
+      <div class="inline" style="margin-top: .75rem;">
+        {{ form.active() }} <span>Active</span>
+      </div>
+
+      <hr style="margin: 1rem 0; border-color: var(--border); border-width: 1px 0 0;">
+
+      <h2 style="margin-top:0;">Cambio de turno</h2>
+      <label for="{{ form.assignment_shift_id.id }}">Nuevo turno (opcional)</label>
+      {{ form.assignment_shift_id() }}
+
+      <label for="{{ form.assignment_effective_from.id }}">Aplicar desde</label>
+      {{ form.assignment_effective_from() }}
+      <p class="muted" style="margin-top:.35rem;">
+        Solo se aplicara si eliges un turno. El cambio afecta desde esa fecha en adelante.
+      </p>
+
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Historial de turnos</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Turno</th>
+          <th>Desde</th>
+          <th>Hasta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for assignment, shift in assignment_rows %}
+          <tr>
+            <td>{{ shift.name if shift else "-" }}</td>
+            <td>{{ assignment.effective_from.strftime('%d/%m/%Y') }}</td>
+            <td>{{ assignment.effective_to.strftime('%d/%m/%Y') if assignment.effective_to else "Actual" }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">Sin cambios de turno registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

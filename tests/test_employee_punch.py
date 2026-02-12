@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import func, select, text
 
 from app.extensions import db
-from app.models import Employee, Tenant, TimeEvent, TimeEventSource, TimeEventType
+from app.models import (
+    Employee,
+    EmployeeShiftAssignment,
+    ExpectedHoursFrequency,
+    Shift,
+    Tenant,
+    TimeEvent,
+    TimeEventSource,
+    TimeEventType,
+)
 
 
 def _login(client):
@@ -159,3 +169,57 @@ def test_presence_control_falls_back_when_shifts_table_is_missing(client, app):
     html = page.get_data(as_text=True)
     assert "Control de presencia" in html
     assert "Sin turno configurado. Se aplica el valor por defecto." in html
+
+
+def test_presence_control_uses_employee_shift_history_for_expected_hours(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+
+        full_time = Shift(
+            tenant_id=tenant_id,
+            name="General",
+            break_counts_as_worked_bool=True,
+            break_minutes=30,
+            expected_hours=Decimal("7.50"),
+            expected_hours_frequency=ExpectedHoursFrequency.DAILY,
+        )
+        part_time = Shift(
+            tenant_id=tenant_id,
+            name="Parcial",
+            break_counts_as_worked_bool=True,
+            break_minutes=30,
+            expected_hours=Decimal("4.00"),
+            expected_hours_frequency=ExpectedHoursFrequency.DAILY,
+        )
+        db.session.add_all([full_time, part_time])
+        db.session.flush()
+        db.session.add_all(
+            [
+                EmployeeShiftAssignment(
+                    tenant_id=tenant_id,
+                    employee_id=employee.id,
+                    shift_id=full_time.id,
+                    effective_from=date(2026, 2, 1),
+                    effective_to=date(2026, 2, 15),
+                ),
+                EmployeeShiftAssignment(
+                    tenant_id=tenant_id,
+                    employee_id=employee.id,
+                    shift_id=part_time.id,
+                    effective_from=date(2026, 2, 16),
+                    effective_to=None,
+                ),
+            ]
+        )
+        db.session.commit()
+
+    page = client.get("/me/presence-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Esperado 115:00" in html
+    assert "Balance -115:00" in html

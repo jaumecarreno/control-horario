@@ -10,7 +10,9 @@
         <tr>
           <th>Name</th>
           <th>Email</th>
+          <th>Current shift</th>
           <th>Active</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -18,10 +20,12 @@
           <tr>
             <td>{{ employee.name }}</td>
             <td>{{ employee.email or '-' }}</td>
+            <td>{{ current_shift_by_employee.get(employee.id, '-') }}</td>
             <td>{{ "Yes" if employee.active else "No" }}</td>
+            <td><a href="{{ url_for('admin.employees_edit', employee_id=employee.id) }}">Edit</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="3">No employees found.</td></tr>
+          <tr><td colspan="5">No employees found.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -64,6 +64,13 @@ CREATE POLICY shifts_tenant_isolation ON shifts
 USING (tenant_id = current_setting('app.tenant_id')::uuid)
 WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
+ALTER TABLE employee_shift_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE employee_shift_assignments FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS employee_shift_assignments_tenant_isolation ON employee_shift_assignments;
+CREATE POLICY employee_shift_assignments_tenant_isolation ON employee_shift_assignments
+USING (tenant_id = current_setting('app.tenant_id')::uuid)
+WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS audit_log_tenant_isolation ON audit_log;

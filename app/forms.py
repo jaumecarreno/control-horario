@@ -29,6 +29,16 @@ class EmployeeCreateForm(FlaskForm):
     submit = SubmitField("Create employee")
 
 
+class EmployeeEditForm(FlaskForm):
+    name = StringField("Name", validators=[DataRequired(), Length(max=255)])
+    email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
+    pin = PasswordField("New PIN (optional)", validators=[Optional(), Length(min=4, max=16)])
+    active = BooleanField("Active", default=True)
+    assignment_shift_id = SelectField("Asignar turno", choices=[], validators=[Optional()], default="", coerce=str)
+    assignment_effective_from = DateField("Aplicar desde", validators=[Optional()], default=date.today)
+    submit = SubmitField("Guardar cambios")
+
+
 class LeaveRequestForm(FlaskForm):
     type_id = SelectField("Leave type", choices=[], validators=[DataRequired()], coerce=str)
     date_from = DateField("From", validators=[DataRequired()])

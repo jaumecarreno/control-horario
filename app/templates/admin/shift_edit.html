@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Editar turno</h1>
+    <p class="muted">Actualiza nombre u horas esperadas. Los cambios se aplican al turno seleccionado.</p>
+
+    <form method="post">
+      {{ form.hidden_tag() }}
+
+      <label for="{{ form.name.id }}">Nombre</label>
+      {{ form.name(list="shift-name-suggestions", placeholder="General") }}
+      <datalist id="shift-name-suggestions">
+        <option value="General"></option>
+        <option value="Media jornada"></option>
+        <option value="Fin de semana"></option>
+      </datalist>
+
+      <div class="inline" style="margin-top: .9rem;">
+        {{ form.break_counts_as_worked_bool() }}
+        <span>El descanso cuenta como jornada laboral</span>
+        <span
+          class="help-icon"
+          title="En caso de no contar como tiempo laboral se restara del tiempo de trabajo"
+          aria-label="Ayuda sobre descanso"
+        >?</span>
+      </div>
+
+      <label for="{{ form.break_minutes.id }}">Minutos de descanso (Control de pausas)</label>
+      {{ form.break_minutes(min=0, step=1) }}
+
+      <label for="{{ form.expected_hours.id }}">Horas trabajadas</label>
+      <div style="display:grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1fr); gap: .6rem;">
+        {{ form.expected_hours(min=0, step="0.25") }}
+        {{ form.expected_hours_frequency() }}
+      </div>
+
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+{% endblock %}

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
@@ -17,6 +17,7 @@ from app.extensions import db
 from app.forms import LeaveRequestForm
 from app.models import (
     Employee,
+    EmployeeShiftAssignment,
     ExpectedHoursFrequency,
     LeaveRequest,
     LeaveRequestStatus,
@@ -148,6 +149,43 @@ def _tenant_shift(tenant_id: uuid.UUID) -> Shift | None:
             exc_info=True,
         )
         return None
+
+
+def _employee_shift_assignments(
+    employee_id: uuid.UUID,
+    start_day: date,
+    end_day: date,
+) -> list[tuple[EmployeeShiftAssignment, Shift | None]] | None:
+    stmt = (
+        select(EmployeeShiftAssignment, Shift)
+        .outerjoin(Shift, Shift.id == EmployeeShiftAssignment.shift_id)
+        .where(
+            EmployeeShiftAssignment.employee_id == employee_id,
+            EmployeeShiftAssignment.effective_from <= end_day,
+            or_(EmployeeShiftAssignment.effective_to.is_(None), EmployeeShiftAssignment.effective_to >= start_day),
+        )
+        .order_by(EmployeeShiftAssignment.effective_from.asc(), EmployeeShiftAssignment.created_at.asc())
+    )
+    try:
+        return list(db.session.execute(stmt).all())
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Employee shift assignment lookup failed. Falling back to tenant-level shift. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        return None
+
+
+def _shift_for_day(
+    assignment_rows: list[tuple[EmployeeShiftAssignment, Shift | None]],
+    current_day: date,
+) -> Shift | None:
+    for assignment, shift in reversed(assignment_rows):
+        if assignment.effective_from <= current_day and (assignment.effective_to is None or assignment.effective_to >= current_day):
+            return shift
+    return None
 
 
 def _business_days_in_month(year: int, month: int) -> int:
@@ -490,7 +528,27 @@ def presence_control():
     for event in month_events:
         events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
-    active_shift = _tenant_shift(employee.tenant_id)
+    days_in_month = monthrange(selected_year, selected_month)[1]
+    month_start_day = date(selected_year, selected_month, 1)
+    month_end_day = date(selected_year, selected_month, days_in_month)
+    assignment_rows = _employee_shift_assignments(employee.id, month_start_day, month_end_day)
+    fallback_shift: Shift | None = None
+    if assignment_rows is None:
+        assignment_rows = []
+        fallback_shift = _tenant_shift(employee.tenant_id)
+
+    today_local = datetime.now(_app_timezone()).date()
+    if fallback_shift is not None:
+        active_shift = fallback_shift
+    elif month_start_day <= today_local <= month_end_day:
+        active_shift = _shift_for_day(assignment_rows, today_local)
+    else:
+        today_assignment_rows = _employee_shift_assignments(employee.id, today_local, today_local)
+        if today_assignment_rows is None:
+            active_shift = _tenant_shift(employee.tenant_id)
+        else:
+            active_shift = _shift_for_day(today_assignment_rows, today_local)
+
     active_shift_frequency = (
         SHIFT_FREQUENCY_LABELS.get(active_shift.expected_hours_frequency) if active_shift is not None else None
     )
@@ -499,15 +557,16 @@ def presence_control():
     month_rows = []
     month_worked = 0
     month_expected = 0
-    for day_index in range(monthrange(selected_year, selected_month)[1]):
+    for day_index in range(days_in_month):
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
+        day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
         paused_minutes, _ = _daily_pause_minutes(day_events)
-        if active_shift is not None and not active_shift.break_counts_as_worked_bool:
+        if day_shift is not None and not day_shift.break_counts_as_worked_bool:
             worked_minutes = max(0, worked_minutes - paused_minutes)
         expected_minutes = _expected_work_minutes_for_day(
-            active_shift,
+            day_shift,
             current_day,
             business_days_in_month,
             business_days_in_year,
@@ -579,15 +638,36 @@ def pause_control():
     for event in month_events:
         events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
 
-    active_shift = _tenant_shift(employee.tenant_id)
+    days_in_month = monthrange(selected_year, selected_month)[1]
+    month_start_day = date(selected_year, selected_month, 1)
+    month_end_day = date(selected_year, selected_month, days_in_month)
+    assignment_rows = _employee_shift_assignments(employee.id, month_start_day, month_end_day)
+    fallback_shift: Shift | None = None
+    if assignment_rows is None:
+        assignment_rows = []
+        fallback_shift = _tenant_shift(employee.tenant_id)
+
+    today_local = datetime.now(_app_timezone()).date()
+    if fallback_shift is not None:
+        active_shift = fallback_shift
+    elif month_start_day <= today_local <= month_end_day:
+        active_shift = _shift_for_day(assignment_rows, today_local)
+    else:
+        today_assignment_rows = _employee_shift_assignments(employee.id, today_local, today_local)
+        if today_assignment_rows is None:
+            active_shift = _tenant_shift(employee.tenant_id)
+        else:
+            active_shift = _shift_for_day(today_assignment_rows, today_local)
+
     month_rows = []
     month_paused = 0
     month_expected = 0
-    for day_index in range(monthrange(selected_year, selected_month)[1]):
+    for day_index in range(days_in_month):
         current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
+        day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         paused_minutes, day_pairs = _daily_pause_minutes(day_events)
-        expected_minutes = _expected_pause_minutes_for_day(active_shift, current_day)
+        expected_minutes = _expected_pause_minutes_for_day(day_shift, current_day)
         month_paused += paused_minutes
         month_expected += expected_minutes
         month_rows.append(

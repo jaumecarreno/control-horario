@@ -14,6 +14,7 @@
           <th>Minutos descanso (Control de pausas)</th>
           <th>Horas trabajadas</th>
           <th>Frecuencia (Horas esperadas)</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -24,9 +25,10 @@
             <td>{{ row.break_minutes }}</td>
             <td>{{ row.expected_hours }}</td>
             <td>{{ shift_frequency_labels.get(row.expected_hours_frequency, row.expected_hours_frequency.value) }}</td>
+            <td><a href="{{ url_for('admin.shifts_edit', shift_id=row.id) }}">Editar</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No hay turnos creados.</td></tr>
+          <tr><td colspan="6">No hay turnos creados.</td></tr>
         {% endfor %}
       </tbody>
     </table>
