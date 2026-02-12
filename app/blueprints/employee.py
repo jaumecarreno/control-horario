@@ -27,8 +27,8 @@ ACTION_MAP = {
 
 
 PUNCH_BUTTONS = [
-    {"slug": "in", "label": "Registrar entrada", "icon": "->]", "class": "in"},
-    {"slug": "out", "label": "Registrar salida", "icon": "[->", "class": "out"},
+    {"slug": "in", "label": "Registrar entrada", "icon": "🚪⬅️", "class": "in"},
+    {"slug": "out", "label": "Registrar salida", "icon": "🚪➡️", "class": "out"},
 ]
 
 
@@ -83,9 +83,9 @@ def _recent_punches(events: list[TimeEvent]) -> list[dict[str, str]]:
     rows = []
     for event in reversed(events):
         if event.type == TimeEventType.IN:
-            rows.append({"label": "Entrada", "ts": event.ts})
+            rows.append({"label": "Entrada", "ts": event.ts.strftime("%H:%M:%S")})
         elif event.type == TimeEventType.OUT:
-            rows.append({"label": "Salida", "ts": event.ts})
+            rows.append({"label": "Salida", "ts": event.ts.strftime("%H:%M:%S")})
         if len(rows) == 5:
             break
     return rows
