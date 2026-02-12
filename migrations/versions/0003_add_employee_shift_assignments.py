@@ -1,6 +1,6 @@
 """Add employee shift assignment history.
 
-Revision ID: 0003_add_employee_shift_assignments
+Revision ID: 0003_emp_shift_assign
 Revises: 0002_add_shifts
 Create Date: 2026-02-13
 """
@@ -15,7 +15,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = "0003_add_employee_shift_assignments"
+revision: str = "0003_emp_shift_assign"
 down_revision: str | None = "0002_add_shifts"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None

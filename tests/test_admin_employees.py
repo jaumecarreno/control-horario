@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.extensions import db
 from app.models import Employee, EmployeeShiftAssignment, Shift
@@ -167,3 +167,56 @@ def test_admin_shift_reassignment_closes_previous_period(admin_only_client):
         assert rows[1].shift_id == parcial.id
         assert rows[1].effective_from == date(2026, 2, 16)
         assert rows[1].effective_to is None
+
+
+def test_admin_employee_edit_does_not_500_when_assignment_table_is_missing(admin_only_client):
+    _login_admin(admin_only_client)
+    admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "7.5",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Tres",
+            "email": "tres@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+
+    with admin_only_client.application.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "tres@example.com")).scalar_one()
+        shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        employee_id = employee.id
+        shift_id = shift.id
+        db.session.execute(text("DROP TABLE employee_shift_assignments"))
+        db.session.commit()
+
+    edit_page = admin_only_client.get(f"/admin/employees/{employee_id}/edit", follow_redirects=True)
+    assert edit_page.status_code == 200
+    assert "No se pudo cargar el historial de turnos del empleado." in edit_page.get_data(as_text=True)
+
+    submit = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Tres",
+            "email": "tres@example.com",
+            "pin": "",
+            "active": "y",
+            "assignment_shift_id": str(shift_id),
+            "assignment_effective_from": "2026-02-01",
+        },
+        follow_redirects=True,
+    )
+    assert submit.status_code == 200
+    body = submit.get_data(as_text=True)
+    assert "No se pudo actualizar turno. Revisa migraciones pendientes" in body

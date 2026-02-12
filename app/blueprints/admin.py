@@ -222,10 +222,12 @@ def employees_edit(employee_id: UUID):
     ]
 
     assignment_rows: list[tuple[EmployeeShiftAssignment, Shift | None]] = []
+    assignment_history_available = True
     try:
         assignment_rows = _employee_assignment_rows(employee.id)
     except (OperationalError, ProgrammingError, LookupError):
         db.session.rollback()
+        assignment_history_available = False
         current_app.logger.warning(
             "Shift assignment history lookup failed while editing employee.",
             exc_info=True,
@@ -283,6 +285,14 @@ def employees_edit(employee_id: UUID):
                     employee=employee,
                     assignment_rows=assignment_rows,
                 )
+            if not assignment_history_available:
+                flash("No se pudo actualizar turno. Revisa migraciones pendientes (alembic upgrade head).", "danger")
+                return render_template(
+                    "admin/employee_edit.html",
+                    form=form,
+                    employee=employee,
+                    assignment_rows=assignment_rows,
+                )
             effective_from = form.assignment_effective_from.data
             if effective_from is None:
                 flash("La fecha de inicio del nuevo turno es obligatoria.", "danger")
@@ -302,12 +312,26 @@ def employees_edit(employee_id: UUID):
                     employee=employee,
                     assignment_rows=assignment_rows,
                 )
-            if _set_employee_shift_assignment(employee, selected_shift, effective_from):
-                shift_payload = {
-                    "shift_id": str(selected_shift.id),
-                    "shift_name": selected_shift.name,
-                    "effective_from": effective_from.isoformat(),
-                }
+            try:
+                if _set_employee_shift_assignment(employee, selected_shift, effective_from):
+                    shift_payload = {
+                        "shift_id": str(selected_shift.id),
+                        "shift_name": selected_shift.name,
+                        "effective_from": effective_from.isoformat(),
+                    }
+            except (OperationalError, ProgrammingError, LookupError):
+                db.session.rollback()
+                current_app.logger.warning(
+                    "Shift assignment update failed while editing employee.",
+                    exc_info=True,
+                )
+                flash("No se pudo actualizar turno. Revisa migraciones pendientes (alembic upgrade head).", "danger")
+                return render_template(
+                    "admin/employee_edit.html",
+                    form=form,
+                    employee=employee,
+                    assignment_rows=assignment_rows,
+                )
 
         db.session.flush()
         log_audit(
