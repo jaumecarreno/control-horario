@@ -220,3 +220,49 @@ def test_admin_employee_edit_does_not_500_when_assignment_table_is_missing(admin
     assert submit.status_code == 200
     body = submit.get_data(as_text=True)
     assert "No se pudo actualizar turno. Revisa migraciones pendientes" in body
+
+
+def test_employee_shift_history_hides_migration_sentinel_date(admin_only_client):
+    _login_admin(admin_only_client)
+    admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "7.5",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Cuatro",
+            "email": "cuatro@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+
+    with admin_only_client.application.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "cuatro@example.com")).scalar_one()
+        shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        employee_id = employee.id
+        db.session.add(
+            EmployeeShiftAssignment(
+                tenant_id=employee.tenant_id,
+                employee_id=employee.id,
+                shift_id=shift.id,
+                effective_from=date(1970, 1, 1),
+                effective_to=None,
+            )
+        )
+        db.session.commit()
+
+    page = admin_only_client.get(f"/admin/employees/{employee_id}/edit", follow_redirects=True)
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert "Asignacion inicial" in body
+    assert "01/01/1970" not in body

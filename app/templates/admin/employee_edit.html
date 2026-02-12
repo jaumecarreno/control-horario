@@ -52,7 +52,13 @@
         {% for assignment, shift in assignment_rows %}
           <tr>
             <td>{{ shift.name if shift else "-" }}</td>
-            <td>{{ assignment.effective_from.strftime('%d/%m/%Y') }}</td>
+            <td>
+              {% if assignment.effective_from.isoformat() == "1970-01-01" %}
+                Asignacion inicial
+              {% else %}
+                {{ assignment.effective_from.strftime('%d/%m/%Y') }}
+              {% endif %}
+            </td>
             <td>{{ assignment.effective_to.strftime('%d/%m/%Y') if assignment.effective_to else "Actual" }}</td>
           </tr>
         {% else %}
