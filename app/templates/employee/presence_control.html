@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap;">
+      <div>
+        <h1 style="margin-bottom:.25rem;">Control de presencia</h1>
+        <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
+      </div>
+      <div class="inline" style="gap:.4rem;">
+        <a href="{{ url_for('employee.presence_control', month=prev_month) }}">◀</a>
+        <strong>{{ month_label }}</strong>
+        <a href="{{ url_for('employee.presence_control', month=next_month) }}">▶</a>
+      </div>
+    </div>
+
+    <p class="muted" style="margin-top:0;">Trabajado {{ month_worked }} · Esperado {{ month_expected }} · Balance {{ month_balance }}</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Día</th>
+          <th>Entradas/Salidas</th>
+          <th>Trabajado</th>
+          <th>Esperado</th>
+          <th>Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in month_rows %}
+          <tr>
+            <td>{{ row.day.strftime('%d/%m/%Y') }}</td>
+            <td>
+              {% if row.pairs %}
+                {{ row.pairs|join(', ') }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>{{ minutes_to_hhmm(row.worked) }}</td>
+            <td>{{ minutes_to_hhmm(row.expected) }}</td>
+            <td>{{ minutes_to_hhmm(row.balance) }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Últimos registros</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha/Hora</th>
+          <th>Tipo</th>
+          <th>Origen</th>
+          <th>Modo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in recent_events %}
+          <tr>
+            <td>{{ event.ts.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+            <td>{{ event.type.value }}</td>
+            <td>{{ event.source.value }}</td>
+            <td>{% if (event.meta_json or {}).get('manual') %}<strong>Manual</strong>{% else %}Normal{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">Sin registros todavía.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}
