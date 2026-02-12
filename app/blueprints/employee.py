@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.extensions import db
@@ -136,7 +137,17 @@ def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
 
 def _tenant_shift(tenant_id: uuid.UUID) -> Shift | None:
     stmt = select(Shift).where(Shift.tenant_id == tenant_id).order_by(Shift.created_at.asc(), Shift.name.asc()).limit(1)
-    return db.session.execute(stmt).scalar_one_or_none()
+    try:
+        return db.session.execute(stmt).scalar_one_or_none()
+    except (OperationalError, ProgrammingError, LookupError):
+        # Keep presence/pause control working with default values if shifts schema/data is inconsistent.
+        db.session.rollback()
+        current_app.logger.warning(
+            "Shift lookup failed. Falling back to default attendance settings. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        return None
 
 
 def _business_days_in_month(year: int, month: int) -> int:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.extensions import db
 from app.models import Employee, Tenant, TimeEvent, TimeEventSource, TimeEventType
@@ -143,3 +143,19 @@ def test_pause_control_page_shows_expected_columns(client):
     assert presence_page.status_code == 200
     presence_html = presence_page.get_data(as_text=True)
     assert "Control de PAusas" in presence_html
+
+
+def test_presence_control_falls_back_when_shifts_table_is_missing(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        db.session.execute(text("DROP TABLE shifts"))
+        db.session.commit()
+
+    page = client.get("/me/presence-control")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Control de presencia" in html
+    assert "Sin turno configurado. Se aplica el valor por defecto." in html
