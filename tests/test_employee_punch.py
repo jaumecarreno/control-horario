@@ -44,3 +44,30 @@ def test_duplicate_punch_requires_confirmation(client):
     )
     assert duplicate_with_confirmation.status_code == 200
     assert _event_count() == 2
+
+
+def test_manual_incident_creates_event_and_is_visible_in_presence(client):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    create_manual = client.post(
+        "/me/incidents/manual",
+        data={
+            "manual_date": "2026-02-12",
+            "manual_hour": "8",
+            "manual_minute": "30",
+            "manual_kind": "IN",
+        },
+        follow_redirects=False,
+    )
+    assert create_manual.status_code == 302
+
+    events_count = _event_count()
+    assert events_count == 1
+
+    page = client.get("/me/presence-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Control de presencia" in html
+    assert "Manual" in html

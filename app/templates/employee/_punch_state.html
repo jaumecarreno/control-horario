@@ -56,7 +56,7 @@
     {% if recent_punches %}
       <ul>
         {% for row in recent_punches %}
-          <li>{{ row.label }} - {{ row.ts }}</li>
+          <li>{{ row.label }} - {{ row.ts }}{{ row.manual }}</li>
         {% endfor %}
       </ul>
     {% else %}
@@ -80,32 +80,35 @@
 
     <button type="button" class="incident-type-btn manual" data-form-target="manual-form">Me he olvidado fichar</button>
     <div class="incident-form" id="manual-form">
+      <form method="post" action="{{ url_for('employee.create_manual_punch') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="manual-date">Fecha del fichaje</label>
-      <input type="date" id="manual-date" name="manual_date">
+      <input type="date" id="manual-date" name="manual_date" required>
 
       <div class="actions" style="margin-top: .5rem;">
         <div>
           <label for="manual-hour">Hora</label>
-          <input type="number" id="manual-hour" min="0" max="23" placeholder="HH">
+          <input type="number" id="manual-hour" name="manual_hour" min="0" max="23" placeholder="HH" required>
         </div>
         <div>
           <label for="manual-minute">Minutos</label>
-          <input type="number" id="manual-minute" min="0" max="59" placeholder="MM">
+          <input type="number" id="manual-minute" name="manual_minute" min="0" max="59" placeholder="MM" required>
         </div>
       </div>
 
       <label for="manual-kind">Tipo</label>
-      <select id="manual-kind">
-        <option value="ENTRADA">Entrada</option>
-        <option value="SALIDA">Salida</option>
+      <select id="manual-kind" name="manual_kind" required>
+        <option value="IN">Entrada</option>
+        <option value="OUT">Salida</option>
       </select>
 
       <p class="muted" style="margin-bottom: 0;">Este fichaje se registrará como WEB - MANUAL.</p>
 
       <div class="incident-actions">
         <button type="button" class="incident-cancel" data-close-modal="true">Cancelar</button>
-        <button type="button" class="incident-send" data-send-demo="manual">Enviar</button>
+        <button type="submit" class="incident-send">Enviar</button>
       </div>
+      </form>
     </div>
 
     <button type="button" class="incident-type-btn wrong" data-form-target="wrong-form">Fichaje incorrecto</button>
@@ -212,6 +215,11 @@
     document.querySelectorAll("[data-send-demo]").forEach((button) => {
       button.addEventListener("click", closeReportModal);
     });
+
+    const manualForm = document.querySelector("#manual-form form");
+    if (manualForm) {
+      manualForm.addEventListener("submit", () => closeReportModal());
+    }
   })();
 
   function confirmDimmedAction(event, action, isDimmed) {

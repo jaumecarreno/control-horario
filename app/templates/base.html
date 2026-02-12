@@ -223,6 +223,7 @@
       <nav>
         {% if current_user.is_authenticated %}
           <a href="{{ url_for('employee.me_today') }}">Me</a>
+          <a href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
           <a href="{{ url_for('admin.employees_list') }}">Admin</a>
           <a href="{{ url_for('auth.select_tenant') }}">Tenant</a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
