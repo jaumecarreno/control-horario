@@ -46,7 +46,6 @@ def login():
 
         login_user(user, remember=form.remember.data)
         session.pop("active_tenant_id", None)
-        session.pop("kiosk_employee_id", None)
 
         db.session.info["actor_user_id"] = str(user.id)
         db.session.info["tenant_id"] = NO_TENANT_UUID
@@ -69,7 +68,6 @@ def login():
 def logout():
     logout_user()
     session.pop("active_tenant_id", None)
-    session.pop("kiosk_employee_id", None)
     flash("Signed out.", "info")
     return redirect(url_for("auth.login"))
 
@@ -102,7 +100,6 @@ def select_tenant():
             return render_template("auth/select_tenant.html", form=form, memberships=membership_rows), 403
 
         session["active_tenant_id"] = form.tenant_id.data
-        session.pop("kiosk_employee_id", None)
         return redirect(url_for("employee.me_today"))
 
     return render_template("auth/select_tenant.html", form=form, memberships=membership_rows)

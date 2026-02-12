@@ -1,12 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Control Horario</title>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script>
+      (function () {
+        var savedTheme = window.localStorage.getItem("control-horario-theme");
+        if (savedTheme) {
+          document.documentElement.setAttribute("data-theme", savedTheme);
+        }
+      })();
+    </script>
     <style>
       :root {
+        --bg: #12151c;
+        --panel: #1a202c;
+        --text: #e5e7eb;
+        --muted: #a8b1c2;
+        --accent: #15803d;
+        --danger: #dc2626;
+        --border: #2c3648;
+      }
+      :root[data-theme="light"] {
         --bg: #f2f4f7;
         --panel: #ffffff;
         --text: #1e293b;
@@ -20,7 +37,7 @@
         margin: 0;
         font-family: "Segoe UI", Tahoma, sans-serif;
         color: var(--text);
-        background: radial-gradient(circle at 20% 10%, #d9efe7, var(--bg) 35%);
+        background: radial-gradient(circle at 20% 10%, rgba(15,118,110,.22), var(--bg) 35%);
       }
       header {
         padding: 1rem 1.5rem;
@@ -47,7 +64,7 @@
         padding: .55rem .65rem;
         border: 1px solid var(--border);
         border-radius: 8px;
-        background: #fff;
+        background: var(--panel);
       }
       button {
         cursor: pointer;
@@ -77,20 +94,26 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: .55rem;
-        padding: .72rem .95rem;
-        font-size: 1.08rem;
+        gap: .65rem;
+        padding: .95rem 1.1rem;
+        font-size: 1.8rem;
+        font-weight: 700;
       }
+      .punch-actions { max-width: 560px; }
       .kiosk-icon {
         display: inline-flex;
         align-items: center;
         justify-content: center;
       }
       .kiosk-icon svg {
-        width: 1.15rem;
-        height: 1.15rem;
+        width: 1.35rem;
+        height: 1.35rem;
         stroke-width: 2.4;
       }
+      .kiosk-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+      .theme-toggle { display: inline-flex; gap: .35rem; }
+      .theme-btn { width: auto; padding: .45rem .62rem; border-radius: 999px; background: transparent; color: var(--text); border: 1px solid var(--border); }
+      .theme-btn.is-selected { background: var(--panel); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
       .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
       .status-pill.status-in { background: #15803d; }
       .status-pill.status-out { background: #b91c1c; }
