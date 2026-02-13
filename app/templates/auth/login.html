@@ -8,7 +8,8 @@
       <label for="{{ form.email.id }}">Email</label>
       {{ form.email(value=form.email.data or "jaume.carreno@gmail.com") }}
       <label for="{{ form.password.id }}">Password</label>
-      {{ form.password(value=form.password.data or "12345678") }}
+      {{ form.password() }}
+      <p class="muted" style="margin:.35rem 0 0;">Pass: 12345678</p>
       <div class="inline" style="margin: .6rem 0 1rem;">
         {{ form.remember() }}
         <span>Remember me</span>
