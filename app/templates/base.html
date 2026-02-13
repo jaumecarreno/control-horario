@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -15,92 +15,275 @@
     </script>
     <style>
       :root {
-        --bg: #0f172a;
-        --panel: #1e293b;
-        --text: #f8fafc;
-        --muted: #94a3b8;
-        --accent: #15803d;
-        --danger: #dc2626;
-        --border: #334155;
-        --inactive-row-bg: #1e293b;
-        --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.2), 0 1px 2px -1px rgb(0 0 0 / 0.15);
-      }
-      :root[data-theme="light"] {
-        --bg: #f8fafc;
+        --bg: #eef2f7;
+        --bg-gradient: radial-gradient(circle at 22% 8%, rgba(79, 70, 229, 0.12), transparent 38%), linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
         --panel: #ffffff;
-        --text: #1e293b;
+        --panel-muted: #f8fafc;
+        --sidebar-bg: #f8fafc;
+        --text: #0f172a;
         --muted: #64748b;
-        --accent: #0f766e;
-        --danger: #b91c1c;
+        --accent: #4f46e5;
+        --accent-hover: #4338ca;
+        --danger: #ef4444;
+        --danger-hover: #dc2626;
         --border: #e2e8f0;
         --inactive-row-bg: #f1f5f9;
-        --card-shadow: 0 4px 6px -1px rgb(15 23 42 / 0.05), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+        --row-hover-bg: rgba(79, 70, 229, 0.05);
+        --card-shadow: 0 20px 30px -28px rgb(15 23 42 / 0.65), 0 2px 5px rgb(15 23 42 / 0.08);
+        --flash-success-bg: #dcfce7;
+        --flash-success-text: #166534;
+        --flash-info-bg: #e0f2fe;
+        --flash-info-text: #075985;
+        --flash-warning-bg: #fef9c3;
+        --flash-warning-text: #854d0e;
+        --flash-danger-bg: #fee2e2;
+        --flash-danger-text: #991b1b;
+      }
+      :root[data-theme="dark"] {
+        --bg: #0f172a;
+        --bg-gradient: radial-gradient(circle at 22% 8%, rgba(99, 102, 241, 0.22), transparent 42%), linear-gradient(180deg, #111827 0%, #0f172a 100%);
+        --panel: #1e293b;
+        --panel-muted: #162231;
+        --sidebar-bg: #0f172a;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #6366f1;
+        --accent-hover: #818cf8;
+        --danger: #f87171;
+        --danger-hover: #ef4444;
+        --border: #334155;
+        --inactive-row-bg: #1f2b3b;
+        --row-hover-bg: rgba(99, 102, 241, 0.16);
+        --card-shadow: 0 16px 30px -26px rgb(15 23 42 / 0.85), 0 2px 6px rgb(15 23 42 / 0.34);
+        --flash-success-bg: #14532d;
+        --flash-success-text: #dcfce7;
+        --flash-info-bg: #0c4a6e;
+        --flash-info-text: #e0f2fe;
+        --flash-warning-bg: #78350f;
+        --flash-warning-text: #fef3c7;
+        --flash-danger-bg: #7f1d1d;
+        --flash-danger-text: #fee2e2;
       }
       * { box-sizing: border-box; }
+      html, body { min-height: 100%; }
       body {
         margin: 0;
         font-family: "Segoe UI", Tahoma, sans-serif;
         color: var(--text);
-        background: radial-gradient(circle at 20% 10%, rgba(37,99,235,.18), var(--bg) 35%);
+        background: var(--bg-gradient);
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
       }
       header {
         padding: 1rem 1.5rem;
-        background: var(--panel);
+        background: var(--sidebar-bg);
         border-bottom: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
         align-items: center;
+        gap: 1rem;
       }
-      main { max-width: 980px; margin: 1.5rem auto; padding: 0 1rem; }
+      header > div strong {
+        display: inline-flex;
+        align-items: center;
+        gap: .7rem;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -.02em;
+        color: var(--text);
+      }
+      header > div strong::before {
+        content: "◷";
+        width: 2.2rem;
+        height: 2.2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: .85rem;
+        background: linear-gradient(135deg, var(--accent), #6366f1);
+        color: #fff;
+        font-size: 1rem;
+      }
+      header nav {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .45rem;
+      }
+      header nav .nav-link {
+        margin: 0;
+        color: var(--muted);
+        text-decoration: none;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: .5rem .85rem;
+        font-weight: 600;
+        transition: all .15s ease;
+      }
+      header nav .nav-link:hover {
+        color: var(--text);
+        border-color: var(--border);
+        background: var(--panel);
+      }
+      header nav .nav-link.is-active {
+        color: #fff;
+        border-color: transparent;
+        background: linear-gradient(135deg, var(--accent), #6366f1);
+        box-shadow: 0 10px 22px -16px rgba(79, 70, 229, 0.85);
+      }
+      header nav .nav-logout-form {
+        display: block;
+        margin: 0;
+      }
+      header nav .nav-logout-form button {
+        width: auto;
+      }
+      main {
+        max-width: 1080px;
+        margin: 1.5rem auto;
+        padding: 0 1rem 2rem;
+      }
       .card {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 12px;
+        border-radius: 22px;
         box-shadow: var(--card-shadow);
-        padding: 1rem;
+        padding: 1.2rem 1.3rem;
         margin-bottom: 1rem;
       }
-      .inline { display: inline-flex; gap: .5rem; align-items: center; }
-      nav a { margin-right: .8rem; color: var(--text); text-decoration: none; }
-      nav a:hover { color: var(--accent); }
-      label { display: block; font-weight: 600; margin-top: .7rem; margin-bottom: .25rem; }
-      input, select, button {
-        width: 100%;
-        padding: .55rem .65rem;
+      .card h1, .card h2 { margin-top: 0; }
+      .inline {
+        display: inline-flex;
+        gap: .5rem;
+        align-items: center;
+      }
+      .card > nav.inline {
+        display: inline-flex;
+        gap: .35rem;
+        background: var(--panel-muted);
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 14px;
+        padding: .3rem;
+      }
+      .card > nav.inline a {
+        margin: 0;
+        border-radius: 10px;
+        font-size: .78rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        font-weight: 700;
+        color: var(--muted);
+        padding: .45rem .85rem;
+        border: 1px solid transparent;
+      }
+      .card > nav.inline a:hover {
+        color: var(--text);
+        border-color: var(--border);
         background: var(--panel);
+      }
+      .card > nav.inline a.is-active {
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), #6366f1);
+      }
+      label { display: block; font-weight: 600; margin-top: .7rem; margin-bottom: .25rem; }
+      input:not([type="checkbox"]):not([type="radio"]), select, button, textarea {
+        width: 100%;
+        padding: .6rem .72rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--panel);
+        color: var(--text);
+        transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+      }
+      input[type="checkbox"], input[type="radio"] {
+        width: auto;
+        accent-color: var(--accent);
+      }
+      input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
       }
       button {
         cursor: pointer;
-        background: var(--accent);
+        background: linear-gradient(135deg, var(--accent), #6366f1);
         color: #fff;
         font-weight: 600;
+        border-color: transparent;
       }
-      button.secondary { background: #475569; }
-      button.danger { background: var(--danger); }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--border); }
+      button:hover {
+        background: linear-gradient(135deg, var(--accent-hover), #6366f1);
+      }
+      button.secondary {
+        background: var(--panel-muted);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }
+      button.secondary:hover {
+        color: var(--text);
+        background: var(--panel);
+      }
+      button.danger {
+        background: linear-gradient(135deg, var(--danger), #f87171);
+      }
+      button.danger:hover {
+        background: linear-gradient(135deg, var(--danger-hover), #f87171);
+      }
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+      }
+      th, td {
+        text-align: left;
+        padding: .62rem .72rem;
+        border-bottom: 1px solid var(--border);
+      }
+      thead th {
+        font-size: .74rem;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: var(--panel-muted);
+      }
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+      tbody tr:hover td {
+        background: var(--row-hover-bg);
+      }
       .inactive-employees-accordion {
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 14px;
         padding: .55rem .7rem;
+        background: var(--panel-muted);
       }
       .inactive-employees-accordion summary {
         cursor: pointer;
         color: var(--muted);
-        font-weight: 600;
+        font-weight: 700;
       }
       .employee-row-inactive {
         color: var(--muted);
         background: var(--inactive-row-bg);
+        filter: grayscale(.2);
       }
       .employee-row-inactive a { color: var(--muted); }
-      .flash { padding: .5rem .7rem; margin-bottom: .6rem; border-radius: 8px; }
-      .flash.success { background: #dcfce7; color: #166534; }
-      .flash.info { background: #e0f2fe; color: #075985; }
-      .flash.warning { background: #fef9c3; color: #854d0e; }
-      .flash.danger { background: #fee2e2; color: #991b1b; }
+      .flash {
+        padding: .64rem .8rem;
+        margin-bottom: .8rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+      }
+      .flash.success { background: var(--flash-success-bg); color: var(--flash-success-text); }
+      .flash.info { background: var(--flash-info-bg); color: var(--flash-info-text); }
+      .flash.warning { background: var(--flash-warning-bg); color: var(--flash-warning-text); }
+      .flash.danger { background: var(--flash-danger-bg); color: var(--flash-danger-text); }
       .actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: .5rem; }
       .muted { color: var(--muted); }
       .help-icon {
@@ -120,10 +303,10 @@
       .kiosk-card { max-width: 620px; }
       .kiosk-clock-wrap { margin-top: .25rem; margin-bottom: 1rem; }
       .kiosk-clock { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
-      .kiosk-btn.in { background: #15803d; }
-      .kiosk-btn.out { background: #b91c1c; }
+      .kiosk-btn.in { background: linear-gradient(135deg, var(--accent), #6366f1); }
+      .kiosk-btn.out { background: linear-gradient(135deg, var(--danger), #f87171); }
       .kiosk-btn.pause { background: #f59e0b; color: #2f2400; }
-      .kiosk-btn.resume { background: #15803d; }
+      .kiosk-btn.resume { background: linear-gradient(135deg, var(--accent), #6366f1); }
       .kiosk-btn.is-dimmed { opacity: .55; }
       .kiosk-btn {
         display: inline-flex;
@@ -150,8 +333,8 @@
       .theme-btn { width: auto; padding: .45rem .62rem; border-radius: 999px; background: transparent; color: var(--text); border: 1px solid var(--border); }
       .theme-btn.is-selected { background: var(--panel); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
       .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
-      .status-pill.status-in { background: #15803d; }
-      .status-pill.status-out { background: #b91c1c; }
+      .status-pill.status-in { background: linear-gradient(135deg, var(--accent), #6366f1); }
+      .status-pill.status-out { background: linear-gradient(135deg, var(--danger), #f87171); }
       .kiosk-history ul { margin: .4rem 0 0; padding-left: 1.1rem; }
       .kiosk-history li { margin-bottom: .25rem; }
 
@@ -161,8 +344,8 @@
         align-items: center;
         gap: .5rem;
         background: transparent;
-        color: #f59e0b;
-        border: 1px solid #f59e0b;
+        color: var(--accent);
+        border: 1px solid rgba(79, 70, 229, 0.4);
         margin-top: 1rem;
       }
 
@@ -248,25 +431,118 @@
       }
 
       .incident-send { background: #15803d; }
+
+      body.layout-auth header {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 262px;
+        border-right: 1px solid var(--border);
+        border-bottom: 0;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        padding: 1.6rem 1.1rem;
+      }
+      body.layout-auth header > div {
+        padding: 0 .5rem .75rem;
+      }
+      body.layout-auth header nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: .28rem;
+      }
+      body.layout-auth header nav .nav-link {
+        border-radius: 14px;
+        padding: .78rem .92rem;
+        font-weight: 700;
+      }
+      body.layout-auth header nav .nav-logout-form {
+        margin-top: .65rem;
+      }
+      body.layout-auth header nav .nav-logout-form button {
+        width: 100%;
+        border-radius: 14px;
+      }
+      body.layout-auth main {
+        max-width: none;
+        margin: 0;
+        margin-left: 262px;
+        padding: 1.3rem 2rem 2.2rem;
+      }
+
+      @media (max-width: 980px) {
+        body.layout-auth header {
+          position: sticky;
+          width: auto;
+          bottom: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+          flex-direction: row;
+          align-items: center;
+          padding: .95rem 1rem;
+        }
+        body.layout-auth header > div {
+          padding: 0;
+        }
+        body.layout-auth header > div strong {
+          font-size: 1.6rem;
+        }
+        body.layout-auth header > div strong::before {
+          width: 1.9rem;
+          height: 1.9rem;
+          border-radius: .7rem;
+          font-size: .9rem;
+        }
+        body.layout-auth header nav {
+          flex-direction: row;
+          align-items: center;
+          gap: .35rem;
+        }
+        body.layout-auth header nav .nav-link {
+          width: auto;
+          border-radius: 999px;
+          padding: .44rem .72rem;
+          font-size: .9rem;
+        }
+        body.layout-auth header nav .nav-logout-form {
+          margin-top: 0;
+        }
+        body.layout-auth header nav .nav-logout-form button {
+          width: auto;
+          border-radius: 999px;
+          padding: .44rem .72rem;
+        }
+        body.layout-auth main {
+          margin-left: 0;
+          padding: 1rem;
+        }
+        .card {
+          border-radius: 16px;
+          padding: 1rem;
+        }
+      }
     </style>
   </head>
-  <body>
+  <body class="{{ 'layout-auth' if current_user.is_authenticated else 'layout-guest' }}">
     <header>
       <div>
         <strong>Control Horario</strong>
       </div>
       <nav>
+        {% set endpoint = request.endpoint or '' %}
         {% if current_user.is_authenticated %}
-          <a href="{{ url_for('employee.me_today') }}">Me</a>
-          <a href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
-          <a href="{{ url_for('admin.employees_list') }}">Admin</a>
-          <a href="{{ url_for('auth.select_tenant') }}">Tenant</a>
-          <form method="post" action="{{ url_for('auth.logout') }}" class="inline">
+          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">Me</a>
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('admin.') else '' }}" href="{{ url_for('admin.employees_list') }}">Admin</a>
+          <a class="nav-link{{ ' is-active' if endpoint == 'auth.select_tenant' else '' }}" href="{{ url_for('auth.select_tenant') }}">Tenant</a>
+          <form method="post" action="{{ url_for('auth.logout') }}" class="inline nav-logout-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="secondary" type="submit">Logout</button>
           </form>
         {% else %}
-          <a href="{{ url_for('auth.login') }}">Login</a>
+          <a class="nav-link{{ ' is-active' if endpoint == 'auth.login' else '' }}" href="{{ url_for('auth.login') }}">Login</a>
         {% endif %}
       </nav>
     </header>

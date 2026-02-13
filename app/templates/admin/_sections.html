@@ -1,4 +1,5 @@
+{% set endpoint = request.endpoint or '' %}
 <nav class="inline" style="margin-bottom: 1rem;">
-  <a href="{{ url_for('admin.employees_list') }}">Employees</a>
-  <a href="{{ url_for('admin.shifts') }}">Turnos</a>
+  <a class="{{ 'is-active' if endpoint.startswith('admin.employees') else '' }}" href="{{ url_for('admin.employees_list') }}">Employees</a>
+  <a class="{{ 'is-active' if endpoint.startswith('admin.shifts') else '' }}" href="{{ url_for('admin.shifts') }}">Turnos</a>
 </nav>
