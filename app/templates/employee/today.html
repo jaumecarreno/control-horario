@@ -2,9 +2,16 @@
 
 {% block content %}
   <section class="card today-card">
-    <h1>Today</h1>
-    <p class="muted">{{ employee.name }}</p>
-    <p><a href="{{ url_for('employee.presence_control') }}">Ir a Historial</a></p>
+    <div class="today-hero">
+      <div class="today-hero-copy">
+        <h1>Hola, {{ employee.name }}!</h1>
+        <p class="muted">Es un buen dia para ser productivo.</p>
+      </div>
+      <div class="today-hero-time">
+        <div class="today-hero-clock" id="hero-clock">--:--:--</div>
+        <div class="today-hero-date" id="hero-date">--</div>
+      </div>
+    </div>
     {% include "employee/_punch_state.html" %}
   </section>
 {% endblock %}

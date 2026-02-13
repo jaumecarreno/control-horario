@@ -397,57 +397,226 @@
         text-align: center;
       }
       .today-card {
-        max-width: 760px;
+        max-width: 1080px;
         margin-left: auto;
         margin-right: auto;
-        text-align: center;
+        text-align: left;
+        color: #e2e8f0;
+        border-radius: 24px;
+        border-color: rgba(129, 140, 248, 0.28);
+        background:
+          radial-gradient(circle at 10% -15%, rgba(79, 70, 229, 0.32), transparent 48%),
+          radial-gradient(circle at 92% -18%, rgba(14, 165, 233, 0.2), transparent 45%),
+          linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(17, 24, 39, 0.94));
+      }
+      .today-card .muted {
+        color: #94a3b8;
+      }
+      .today-card .today-hero {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .today-card .today-hero-copy h1 {
+        margin: 0;
+        font-size: 2.05rem;
+        letter-spacing: -.02em;
+      }
+      .today-card .today-hero-copy .muted {
+        margin: .35rem 0 0;
+        font-size: 1.03rem;
+        color: #94a3b8;
+      }
+      .today-card .today-hero-time {
+        min-width: 225px;
+        text-align: right;
+      }
+      .today-card .today-hero-clock {
+        font-size: 3rem;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        line-height: 1;
+      }
+      .today-card .today-hero-date {
+        margin-top: .3rem;
+        color: #a5b4fc;
+        font-weight: 600;
+        text-transform: capitalize;
       }
       .today-card .kiosk-toolbar {
         width: 100%;
         position: relative;
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        min-height: 2.25rem;
-      }
-      .today-card .kiosk-clock-wrap {
-        margin: 0 auto 1rem;
-        text-align: center;
       }
       .today-card .theme-toggle {
         position: absolute;
         right: 0;
-        top: 0;
+        top: .25rem;
+      }
+      .today-card .balance-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+        gap: .8rem;
+        padding-right: 3.15rem;
+      }
+      .today-card .balance-card {
+        padding: .9rem 1rem;
+        border-radius: 16px;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        background: rgba(15, 23, 42, 0.45);
+      }
+      .today-card .balance-card-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .5rem;
+      }
+      .today-card .balance-card-top h3 {
+        margin: 0;
+        font-size: 1.06rem;
+      }
+      .today-card .balance-card-total {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+        padding: .2rem .45rem;
+        border-radius: 8px;
+        background: rgba(30, 41, 59, 0.85);
+        color: #cbd5e1;
+      }
+      .today-card .balance-card-number {
+        margin: .65rem 0 .6rem;
+        font-size: 2rem;
+        font-weight: 800;
+        line-height: 1;
+      }
+      .today-card .balance-card-number span {
+        font-size: .97rem;
+        font-weight: 500;
+        color: #94a3b8;
+      }
+      .today-card .balance-meter {
+        height: .36rem;
+        border-radius: 999px;
+        background: rgba(30, 41, 59, 0.95);
+        overflow: hidden;
+      }
+      .today-card .balance-meter span {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #6366f1, #818cf8);
+      }
+      .today-card .balance-card.personal-days .balance-meter span {
+        background: linear-gradient(90deg, #8b5cf6, #ec4899);
+      }
+      .today-card .balance-card.extra-days .balance-meter span {
+        background: linear-gradient(90deg, #14b8a6, #22d3ee);
       }
       .today-card .punch-group {
         width: 100%;
-        max-width: 640px;
-        margin: .25rem auto 0;
-        padding: .85rem;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--panel-muted);
+        margin: 1rem 0 0;
+        padding: 1rem;
+        border-radius: 22px;
+        border: 1px solid rgba(100, 116, 139, 0.42);
+        background: rgba(15, 23, 42, 0.56);
       }
       .today-card .punch-group-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        gap: .5rem;
-        margin-bottom: .7rem;
+        justify-content: space-between;
+        gap: .8rem;
+        margin-bottom: .85rem;
+      }
+      .today-card .punch-state-current {
+        display: flex;
+        align-items: center;
+        gap: .65rem;
+      }
+      .today-card .state-dot {
+        width: .72rem;
+        height: .72rem;
+        border-radius: 999px;
+      }
+      .today-card .state-dot.is-in {
+        background: #22c55e;
+        box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.22);
+      }
+      .today-card .state-dot.is-out {
+        background: #64748b;
+        box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.22);
+      }
+      .today-card .punch-state-current .muted {
+        display: block;
+      }
+      .today-card .punch-state-current strong {
+        display: block;
+        margin-top: .15rem;
+        font-size: 1.3rem;
+        color: #dbeafe;
+      }
+      .today-card .absence-link-inline {
+        color: #818cf8;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: .95rem;
+      }
+      .today-card .absence-link-inline:hover {
+        color: #a5b4fc;
       }
       .today-card .punch-actions {
         max-width: none;
         width: 100%;
         grid-template-columns: 1fr;
+        gap: .7rem;
       }
       .today-card .punch-actions form {
         width: 100%;
       }
+      .today-card .punch-actions .kiosk-btn {
+        width: 100%;
+        min-height: 7rem;
+        border-radius: 16px;
+        border: 1px solid rgba(100, 116, 139, 0.45);
+        background: rgba(15, 23, 42, 0.42);
+        color: #cbd5e1;
+        font-size: 2rem;
+      }
+      .today-card .punch-actions .kiosk-icon svg {
+        width: 1.95rem;
+        height: 1.95rem;
+      }
+      .today-card .kiosk-btn.in {
+        background: rgba(99, 102, 241, 0.08);
+        border-color: rgba(129, 140, 248, 0.42);
+        color: #c7d2fe;
+      }
+      .today-card .kiosk-btn.in.is-highlight-entry {
+        background: linear-gradient(135deg, #4f46e5, #5b4fe8);
+        border-color: rgba(167, 180, 255, 0.7);
+        color: #fff;
+        box-shadow: 0 14px 28px -18px rgba(99, 102, 241, 0.9);
+      }
+      .today-card .kiosk-btn.in.is-highlight-entry .kiosk-icon {
+        color: #fff;
+      }
+      .today-card .kiosk-btn.out {
+        background: rgba(239, 68, 68, 0.08);
+        border-color: rgba(248, 113, 113, 0.5);
+        color: #fda4af;
+      }
+      .today-card .kiosk-btn.out .kiosk-icon {
+        color: #ef4444;
+      }
+      .today-card .kiosk-btn.is-dimmed {
+        opacity: .5;
+      }
       .today-card .punch-group-tools {
-        margin-top: .7rem;
+        margin-top: .75rem;
         display: grid;
         grid-template-columns: 1fr;
-        gap: .5rem;
+        gap: .55rem;
       }
       .today-card .punch-group-tools .pause-form {
         margin: 0;
@@ -459,17 +628,37 @@
         width: 100%;
         justify-content: center;
         margin: 0;
+        font-size: 1.4rem;
+        border: 1px solid rgba(248, 113, 113, 0.55);
+        background: rgba(239, 68, 68, 0.08);
+        color: #fda4af;
+      }
+      .today-card .punch-group-tools .report-btn span {
+        color: #ef4444;
       }
       .today-card .punch-pause-btn {
-        font-size: 1rem;
-        padding: .65rem .9rem;
+        min-height: 3.3rem;
+        font-size: 1.3rem;
+        padding: .72rem .88rem;
+      }
+      .today-card .punch-pause-btn.pause {
+        border: 1px solid #f4b23d;
+        color: #f4b23d;
+        background: rgba(245, 158, 11, 0.08);
+      }
+      .today-card .punch-pause-btn.pause .kiosk-icon {
+        color: #f4b23d;
+      }
+      .today-card .punch-pause-btn.resume {
+        border: 1px solid rgba(129, 140, 248, 0.55);
+        color: #c7d2fe;
+        background: rgba(79, 70, 229, 0.22);
       }
       .today-card .punch-group-meta {
-        margin-top: .6rem;
+        margin-top: .7rem;
         display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: .5rem 1rem;
+        justify-content: space-between;
+        gap: .65rem;
         flex-wrap: wrap;
       }
       .today-card .punch-group-meta p {
@@ -477,12 +666,15 @@
       }
       .today-card .kiosk-history {
         width: 100%;
-        max-width: 640px;
-        margin: 1rem auto 0;
+        margin: 1rem 0 0;
         text-align: left;
+        border: 1px solid rgba(100, 116, 139, 0.35);
+        border-radius: 18px;
+        padding: .95rem 1rem;
+        background: rgba(15, 23, 42, 0.52);
       }
       .today-card .kiosk-history h3 {
-        text-align: center;
+        margin: 0;
       }
       .muted { color: var(--muted); }
       .help-icon {
@@ -811,6 +1003,39 @@
         }
         body.has-mobile-nav.nav-open .mobile-nav-overlay {
           display: block;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .today-card .today-hero {
+          flex-direction: column;
+          gap: .7rem;
+        }
+        .today-card .today-hero-time {
+          min-width: 0;
+          text-align: left;
+        }
+        .today-card .today-hero-clock {
+          font-size: 2.2rem;
+        }
+        .today-card .kiosk-toolbar {
+          display: flex;
+          flex-direction: column;
+          gap: .65rem;
+        }
+        .today-card .theme-toggle {
+          position: static;
+          justify-content: flex-end;
+        }
+        .today-card .balance-cards {
+          padding-right: 0;
+        }
+        .today-card .punch-group-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .today-card .punch-group-meta {
+          justify-content: flex-start;
         }
       }
 

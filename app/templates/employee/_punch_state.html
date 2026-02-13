@@ -1,45 +1,30 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
   <div class="kiosk-toolbar">
-    <div class="kiosk-clock-wrap">
-      <div class="balance-table-wrap" aria-label="Saldos">
-        <table class="balance-table">
-          <thead>
-            <tr>
-              <th>Tipo de apunte</th>
-              <th>A&ntilde;o</th>
-              <th>Asignado</th>
-              <th>Disfrutado</th>
-              <th>Pendiente</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Dias de vacaciones</td>
-              <td>2026</td>
-              <td>22</td>
-              <td>-8</td>
-              <td>14</td>
-            </tr>
-            <tr>
-              <td>Dias de asuntos propios</td>
-              <td>2026</td>
-              <td>3</td>
-              <td>-1</td>
-              <td>2</td>
-            </tr>
-            <tr>
-              <td>Dias adicionales</td>
-              <td>2026</td>
-              <td>8</td>
-              <td>-2</td>
-              <td>6</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <a class="absence-link-btn" href="{{ url_for('employee.me_leaves') }}">Solicitar ausencia</a>
-      <p class="muted">Hora actual</p>
-      <div class="kiosk-clock" id="live-clock">--:--:--</div>
+    <div class="balance-cards" aria-label="Saldos">
+      <article class="balance-card vacations">
+        <div class="balance-card-top">
+          <h3>Vacaciones</h3>
+          <span class="balance-card-total">22 totales</span>
+        </div>
+        <p class="balance-card-number">14 <span>dias restantes</span></p>
+        <div class="balance-meter"><span style="width:64%"></span></div>
+      </article>
+      <article class="balance-card personal-days">
+        <div class="balance-card-top">
+          <h3>Asuntos propios</h3>
+          <span class="balance-card-total">3 totales</span>
+        </div>
+        <p class="balance-card-number">2 <span>dias restantes</span></p>
+        <div class="balance-meter"><span style="width:67%"></span></div>
+      </article>
+      <article class="balance-card extra-days">
+        <div class="balance-card-top">
+          <h3>Dias adicionales</h3>
+          <span class="balance-card-total">8 totales</span>
+        </div>
+        <p class="balance-card-number">6 <span>dias restantes</span></p>
+        <div class="balance-meter"><span style="width:75%"></span></div>
+      </article>
     </div>
 
     <div class="theme-toggle" aria-label="Cambiar tema">
@@ -50,9 +35,16 @@
   </div>
 
   <div class="punch-group">
+    {% set is_outside = current_state != 'ENTRADA' %}
     <div class="punch-group-header">
-      <span class="muted">Estado actual</span>
-      <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
+      <div class="punch-state-current">
+        <span class="state-dot {{ 'is-in' if current_state == 'ENTRADA' else 'is-out' }}" aria-hidden="true"></span>
+        <div>
+          <span class="muted">Estado actual</span>
+          <strong>{{ 'Dentro de jornada' if current_state == 'ENTRADA' else 'Fuera de jornada' }}</strong>
+        </div>
+      </div>
+      <a class="absence-link-inline" href="{{ url_for('employee.me_leaves') }}">Solicitar ausencia</a>
     </div>
 
     <div class="actions punch-actions">
@@ -68,7 +60,10 @@
         >
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="confirm_repeat" value="0">
-          <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
+          <button
+            type="submit"
+            class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %} {% if is_outside and button.slug == 'in' %}is-highlight-entry{% endif %}"
+          >
             <span class="kiosk-icon" aria-hidden="true">
               {% if button.slug == 'in' %}
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -84,7 +79,7 @@
                 </svg>
               {% endif %}
             </span>
-            {{ button.label }}
+            {{ button.label | replace('ENTRADA', 'Entrada') | replace('SALIDA', 'Salida') }}
           </button>
         </form>
       {% endfor %}
@@ -211,13 +206,30 @@
 <script>
   (function () {
     function updateClock() {
-      const clockEl = document.getElementById("live-clock");
-      if (!clockEl) return;
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, "0");
       const mm = String(now.getMinutes()).padStart(2, "0");
       const ss = String(now.getSeconds()).padStart(2, "0");
-      clockEl.textContent = `${hh}:${mm}:${ss}`;
+      const timeValue = `${hh}:${mm}:${ss}`;
+      const heroClockEl = document.getElementById("hero-clock");
+      if (heroClockEl) {
+        heroClockEl.textContent = timeValue;
+      }
+
+      const clockEl = document.getElementById("live-clock");
+      if (clockEl) {
+        clockEl.textContent = timeValue;
+      }
+
+      const heroDateEl = document.getElementById("hero-date");
+      if (heroDateEl) {
+        const formattedDate = now.toLocaleDateString("es-ES", {
+          weekday: "long",
+          day: "2-digit",
+          month: "long",
+        });
+        heroDateEl.textContent = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+      }
     }
 
     function updatePauseClock() {
