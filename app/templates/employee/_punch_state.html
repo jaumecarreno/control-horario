@@ -11,44 +11,46 @@
     </div>
   </div>
 
-  <p>
-    Estado actual:
-    <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
-  </p>
+  <div class="punch-group">
+    <div class="punch-group-header">
+      <span class="muted">Estado actual</span>
+      <strong class="status-pill {{ 'status-in' if current_state == 'ENTRADA' else 'status-out' }}">{{ current_state }}</strong>
+    </div>
 
-  <div class="actions punch-actions">
-    {% for button in punch_buttons %}
-      {% set is_dimmed = (current_state == 'ENTRADA' and button.slug == 'in') or (current_state == 'SALIDA' and button.slug == 'out') %}
-      <form
-        method="post"
-        action="{{ url_for('employee.punch_action', action=button.slug) }}"
-        hx-post="{{ url_for('employee.punch_action', action=button.slug) }}"
-        hx-target="#punch-state"
-        hx-swap="outerHTML"
-        onsubmit="return confirmDimmedAction(event, '{{ button.slug }}', {{ 'true' if is_dimmed else 'false' }})"
-      >
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <input type="hidden" name="confirm_repeat" value="0">
-        <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
-          <span class="kiosk-icon" aria-hidden="true">
-            {% if button.slug == 'in' %}
-              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            {% else %}
-              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            {% endif %}
-          </span>
-          {{ button.label }}
-        </button>
-      </form>
-    {% endfor %}
+    <div class="actions punch-actions">
+      {% for button in punch_buttons %}
+        {% set is_dimmed = (current_state == 'ENTRADA' and button.slug == 'in') or (current_state == 'SALIDA' and button.slug == 'out') %}
+        <form
+          method="post"
+          action="{{ url_for('employee.punch_action', action=button.slug) }}"
+          hx-post="{{ url_for('employee.punch_action', action=button.slug) }}"
+          hx-target="#punch-state"
+          hx-swap="outerHTML"
+          onsubmit="return confirmDimmedAction(event, '{{ button.slug }}', {{ 'true' if is_dimmed else 'false' }})"
+        >
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="confirm_repeat" value="0">
+          <button type="submit" class="kiosk-btn {{ button.class }} {% if is_dimmed %}is-dimmed{% endif %}">
+            <span class="kiosk-icon" aria-hidden="true">
+              {% if button.slug == 'in' %}
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {% else %}
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {% endif %}
+            </span>
+            {{ button.label }}
+          </button>
+        </form>
+      {% endfor %}
+    </div>
   </div>
 
   <div class="kiosk-history" style="margin-top: 1rem;">

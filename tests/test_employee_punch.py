@@ -145,14 +145,14 @@ def test_pause_control_page_shows_expected_columns(client):
     page = client.get("/me/pause-control")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
-    assert "Control de PAusas" in html
+    assert "Control de pausas" in html
     assert "<th>Pausas</th>" in html
     assert "00:30" in html
 
     presence_page = client.get("/me/presence-control")
     assert presence_page.status_code == 200
     presence_html = presence_page.get_data(as_text=True)
-    assert "Control de PAusas" in presence_html
+    assert "Control de pausas" in presence_html
 
 
 def test_presence_control_falls_back_when_shifts_table_is_missing(client, app):

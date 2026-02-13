@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-  <section class="card">
+  <section class="card today-card">
     <h1>Today</h1>
     <p class="muted">{{ employee.name }}</p>
     <p><a href="{{ url_for('employee.presence_control') }}">Ir a Control de presencia</a></p>

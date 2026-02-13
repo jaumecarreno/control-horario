@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Control Horario</title>
+    <title>Blueteam</title>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script>
       (function () {
@@ -85,7 +85,7 @@
         align-items: center;
         gap: 1rem;
       }
-      header > div strong {
+      .brand-link {
         display: inline-flex;
         align-items: center;
         gap: .7rem;
@@ -93,9 +93,10 @@
         font-weight: 800;
         letter-spacing: -.02em;
         color: var(--text);
+        text-decoration: none;
       }
-      header > div strong::before {
-        content: "◷";
+      .brand-link::before {
+        content: "BT";
         width: 2.2rem;
         height: 2.2rem;
         display: inline-flex;
@@ -104,7 +105,40 @@
         border-radius: .85rem;
         background: linear-gradient(135deg, var(--accent), #6366f1);
         color: #fff;
-        font-size: 1rem;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+      }
+      .nav-toggle-btn {
+        display: none;
+        width: 2.45rem;
+        height: 2.45rem;
+        min-width: 2.45rem;
+        padding: .35rem;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        align-items: center;
+        justify-content: center;
+        gap: .24rem;
+        flex-direction: column;
+      }
+      .nav-toggle-btn span {
+        display: block;
+        width: 1.1rem;
+        height: 2px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+      .mobile-nav-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        border: 0;
+        background: rgba(2, 6, 23, 0.42);
+        padding: 0;
       }
       header nav {
         display: flex;
@@ -141,8 +175,13 @@
         width: auto;
       }
       main {
-        max-width: 1080px;
-        margin: 1.5rem auto;
+        max-width: none;
+        margin: 0;
+        padding: 1rem;
+      }
+      body.layout-guest main {
+        max-width: 680px;
+        margin: 2rem auto;
         padding: 0 1rem 2rem;
       }
       .card {
@@ -285,6 +324,89 @@
       .flash.warning { background: var(--flash-warning-bg); color: var(--flash-warning-text); }
       .flash.danger { background: var(--flash-danger-bg); color: var(--flash-danger-text); }
       .actions { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: .5rem; }
+      .month-nav {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .65rem;
+      }
+      .month-nav-btn {
+        width: 2.35rem;
+        height: 2.35rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel-muted);
+        color: var(--text);
+        font-size: 1.05rem;
+        font-weight: 800;
+        line-height: 1;
+      }
+      .month-nav-btn:hover {
+        background: var(--row-hover-bg);
+      }
+      .month-nav-label {
+        min-width: 8.5rem;
+        text-align: center;
+      }
+      .today-card {
+        max-width: 760px;
+        margin-left: auto;
+        margin-right: auto;
+        text-align: center;
+      }
+      .today-card .kiosk-toolbar {
+        width: 100%;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: 2.25rem;
+      }
+      .today-card .kiosk-clock-wrap {
+        margin: 0 auto 1rem;
+        text-align: center;
+      }
+      .today-card .theme-toggle {
+        position: absolute;
+        right: 0;
+        top: 0;
+      }
+      .today-card .punch-group {
+        width: 100%;
+        max-width: 640px;
+        margin: .25rem auto 0;
+        padding: .85rem;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--panel-muted);
+      }
+      .today-card .punch-group-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        margin-bottom: .7rem;
+      }
+      .today-card .punch-actions {
+        max-width: none;
+        width: 100%;
+        grid-template-columns: 1fr;
+      }
+      .today-card .punch-actions form {
+        width: 100%;
+      }
+      .today-card .kiosk-history {
+        width: 100%;
+        max-width: 640px;
+        margin: 1rem auto 0;
+        text-align: left;
+      }
+      .today-card .kiosk-history h3 {
+        text-align: center;
+      }
       .muted { color: var(--muted); }
       .help-icon {
         display: inline-flex;
@@ -346,7 +468,7 @@
         background: transparent;
         color: var(--accent);
         border: 1px solid rgba(79, 70, 229, 0.4);
-        margin-top: 1rem;
+        margin: 1rem auto 0;
       }
 
       .report-modal {
@@ -433,107 +555,201 @@
       .incident-send { background: #15803d; }
 
       body.layout-auth header {
-        position: fixed;
-        left: 0;
+        position: sticky;
         top: 0;
-        bottom: 0;
-        width: 262px;
-        border-right: 1px solid var(--border);
-        border-bottom: 0;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-        padding: 1.6rem 1.1rem;
+        z-index: 30;
+        width: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+        flex-direction: row;
+        align-items: center;
+        padding: .95rem 1rem;
       }
       body.layout-auth header > div {
-        padding: 0 .5rem .75rem;
+        padding: 0;
+      }
+      body.layout-auth .brand-link {
+        font-size: 1.6rem;
+      }
+      body.layout-auth .brand-link::before {
+        width: 1.9rem;
+        height: 1.9rem;
+        border-radius: .7rem;
+        font-size: .62rem;
       }
       body.layout-auth header nav {
-        flex-direction: column;
-        align-items: stretch;
-        gap: .28rem;
+        flex-direction: row;
+        align-items: center;
+        gap: .35rem;
       }
       body.layout-auth header nav .nav-link {
-        border-radius: 14px;
-        padding: .78rem .92rem;
-        font-weight: 700;
+        width: auto;
+        border-radius: 999px;
+        padding: .44rem .72rem;
+        font-size: .9rem;
       }
       body.layout-auth header nav .nav-logout-form {
-        margin-top: .65rem;
+        margin-top: 0;
       }
       body.layout-auth header nav .nav-logout-form button {
-        width: 100%;
-        border-radius: 14px;
+        width: auto;
+        border-radius: 999px;
+        padding: .44rem .72rem;
       }
       body.layout-auth main {
-        max-width: none;
-        margin: 0;
-        margin-left: 262px;
-        padding: 1.3rem 2rem 2.2rem;
+        margin-left: 0;
+        padding: 1rem;
+      }
+      body.layout-auth main > .flash,
+      body.layout-auth main > .card {
+        width: min(100%, 900px);
+        margin-left: auto;
+        margin-right: auto;
       }
 
       @media (max-width: 980px) {
+        body.has-mobile-nav header {
+          justify-content: space-between;
+        }
+        body.has-mobile-nav .nav-toggle-btn {
+          display: inline-flex;
+          margin-left: auto;
+        }
+        body.has-mobile-nav header nav {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          z-index: 60;
+          width: min(86vw, 320px);
+          padding: 1rem;
+          background: var(--sidebar-bg);
+          border-right: 1px solid var(--border);
+          box-shadow: 0 20px 40px -30px rgba(15, 23, 42, 0.75);
+          flex-direction: column;
+          align-items: stretch;
+          flex-wrap: nowrap;
+          gap: .3rem;
+          transform: translateX(-104%);
+          transition: transform .2s ease;
+          overflow-y: auto;
+        }
+        body.has-mobile-nav header nav .nav-link {
+          width: 100%;
+          border-radius: 14px;
+          padding: .78rem .92rem;
+          font-size: 1rem;
+          font-weight: 700;
+        }
+        body.has-mobile-nav header nav .nav-logout-form {
+          width: 100%;
+          margin-top: .65rem;
+        }
+        body.has-mobile-nav header nav .nav-logout-form button {
+          width: 100%;
+          border-radius: 14px;
+          padding: .78rem .92rem;
+        }
+        body.has-mobile-nav.nav-open {
+          overflow: hidden;
+        }
+        body.has-mobile-nav.nav-open header nav {
+          transform: translateX(0);
+        }
+        body.has-mobile-nav.nav-open .mobile-nav-overlay {
+          display: block;
+        }
+      }
+
+      @media (min-width: 681px) {
+        .today-card .punch-actions {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .month-nav-btn {
+          width: 2.7rem;
+          height: 2.7rem;
+          font-size: 1.2rem;
+        }
+      }
+
+      @media (min-width: 981px) {
+        .nav-toggle-btn,
+        .mobile-nav-overlay {
+          display: none !important;
+        }
         body.layout-auth header {
-          position: sticky;
-          width: auto;
-          bottom: auto;
-          border-right: 0;
-          border-bottom: 1px solid var(--border);
-          flex-direction: row;
-          align-items: center;
-          padding: .95rem 1rem;
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 262px;
+          border-right: 1px solid var(--border);
+          border-bottom: 0;
+          flex-direction: column;
+          align-items: stretch;
+          justify-content: flex-start;
+          padding: 1.6rem 1.1rem;
         }
         body.layout-auth header > div {
-          padding: 0;
+          padding: 0 .5rem .75rem;
         }
-        body.layout-auth header > div strong {
-          font-size: 1.6rem;
+        body.layout-auth .brand-link {
+          font-size: 2rem;
         }
-        body.layout-auth header > div strong::before {
-          width: 1.9rem;
-          height: 1.9rem;
-          border-radius: .7rem;
-          font-size: .9rem;
+        body.layout-auth .brand-link::before {
+          width: 2.2rem;
+          height: 2.2rem;
+          border-radius: .85rem;
+          font-size: .72rem;
         }
         body.layout-auth header nav {
-          flex-direction: row;
-          align-items: center;
-          gap: .35rem;
+          flex-direction: column;
+          align-items: stretch;
+          gap: .28rem;
         }
         body.layout-auth header nav .nav-link {
-          width: auto;
-          border-radius: 999px;
-          padding: .44rem .72rem;
-          font-size: .9rem;
+          width: 100%;
+          border-radius: 14px;
+          padding: .78rem .92rem;
+          font-size: 1rem;
+          font-weight: 700;
         }
         body.layout-auth header nav .nav-logout-form {
-          margin-top: 0;
+          margin-top: .65rem;
+          width: 100%;
         }
         body.layout-auth header nav .nav-logout-form button {
-          width: auto;
-          border-radius: 999px;
-          padding: .44rem .72rem;
+          width: 100%;
+          border-radius: 14px;
+          padding: .78rem .92rem;
         }
         body.layout-auth main {
-          margin-left: 0;
-          padding: 1rem;
+          margin-left: 262px;
+          padding: 1.35rem 1.6rem 2.2rem;
         }
-        .card {
-          border-radius: 16px;
-          padding: 1rem;
+        body.layout-auth main > .flash,
+        body.layout-auth main > .card {
+          width: min(100%, 980px);
         }
       }
     </style>
   </head>
-  <body class="{{ 'layout-auth' if current_user.is_authenticated else 'layout-guest' }}">
+  <body class="{{ 'layout-auth has-mobile-nav' if current_user.is_authenticated else 'layout-guest' }}">
     <header>
       <div>
-        <strong>Control Horario</strong>
+        <a class="brand-link" href="{{ url_for('employee.me_today') if current_user.is_authenticated else url_for('auth.login') }}">Blueteam</a>
       </div>
-      <nav>
+      {% if current_user.is_authenticated %}
+        <button type="button" class="nav-toggle-btn" id="nav-toggle-btn" aria-label="Abrir menu" aria-controls="site-nav" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      {% endif %}
+      <nav id="site-nav">
         {% set endpoint = request.endpoint or '' %}
         {% if current_user.is_authenticated %}
-          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">Me</a>
+          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">Mis horas</a>
           <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
           <a class="nav-link{{ ' is-active' if endpoint.startswith('admin.') else '' }}" href="{{ url_for('admin.employees_list') }}">Admin</a>
           <a class="nav-link{{ ' is-active' if endpoint == 'auth.select_tenant' else '' }}" href="{{ url_for('auth.select_tenant') }}">Tenant</a>
@@ -546,6 +762,9 @@
         {% endif %}
       </nav>
     </header>
+    {% if current_user.is_authenticated %}
+      <button type="button" class="mobile-nav-overlay" id="mobile-nav-overlay" aria-label="Cerrar menu"></button>
+    {% endif %}
     <main>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}
@@ -554,5 +773,65 @@
       {% endwith %}
       {% block content %}{% endblock %}
     </main>
+    {% if current_user.is_authenticated %}
+      <script>
+        (function () {
+          var body = document.body;
+          var toggleBtn = document.getElementById("nav-toggle-btn");
+          var overlay = document.getElementById("mobile-nav-overlay");
+          var siteNav = document.getElementById("site-nav");
+          if (!body || !toggleBtn || !overlay || !siteNav) {
+            return;
+          }
+
+          function isMobileNav() {
+            return window.matchMedia("(max-width: 980px)").matches;
+          }
+
+          function closeMobileNav() {
+            body.classList.remove("nav-open");
+            toggleBtn.setAttribute("aria-expanded", "false");
+          }
+
+          function openMobileNav() {
+            body.classList.add("nav-open");
+            toggleBtn.setAttribute("aria-expanded", "true");
+          }
+
+          toggleBtn.addEventListener("click", function () {
+            if (!isMobileNav()) {
+              return;
+            }
+            if (body.classList.contains("nav-open")) {
+              closeMobileNav();
+              return;
+            }
+            openMobileNav();
+          });
+
+          overlay.addEventListener("click", closeMobileNav);
+          document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") {
+              closeMobileNav();
+            }
+          });
+
+          siteNav.querySelectorAll("a, button").forEach(function (node) {
+            node.addEventListener("click", function () {
+              if (isMobileNav()) {
+                closeMobileNav();
+              }
+            });
+          });
+
+          window.addEventListener("resize", function () {
+            if (!isMobileNav()) {
+              closeMobileNav();
+            }
+          });
+        })();
+      </script>
+    {% endif %}
   </body>
 </html>
+

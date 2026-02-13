@@ -5,13 +5,13 @@
     <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap;">
       <div>
         <h1 style="margin-bottom:.25rem;">Control de presencia</h1>
-        <p style="margin:.15rem 0;"><a href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de PAusas</a></p>
+        <p style="margin:.15rem 0;"><a href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de pausas</a></p>
         <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
       </div>
-      <div class="inline" style="gap:.4rem;">
-        <a href="{{ url_for('employee.presence_control', month=prev_month) }}">&#9664;</a>
-        <strong>{{ month_label }}</strong>
-        <a href="{{ url_for('employee.presence_control', month=next_month) }}">&#9654;</a>
+      <div class="month-nav">
+        <a class="month-nav-btn" href="{{ url_for('employee.presence_control', month=prev_month) }}" aria-label="Mes anterior">&#9664;</a>
+        <strong class="month-nav-label">{{ month_label }}</strong>
+        <a class="month-nav-btn" href="{{ url_for('employee.presence_control', month=next_month) }}" aria-label="Mes siguiente">&#9654;</a>
       </div>
     </div>
 
