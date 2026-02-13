@@ -674,9 +674,13 @@
         justify-content: center;
         margin: 0;
         font-size: 1.5rem;
-        border: 1px solid rgba(244, 63, 94, 0.72);
-        background: rgba(76, 29, 46, 0.52);
-        color: #fda4af;
+        border: 1px solid rgba(100, 116, 139, 0.52);
+        background: rgba(15, 23, 42, 0.38);
+        color: #e2e8f0;
+      }
+      .today-card .punch-group-tools .report-btn:hover {
+        border-color: rgba(148, 163, 184, 0.62);
+        background: rgba(30, 41, 59, 0.52);
       }
       .today-card .report-btn-icon {
         width: 1.25rem;
@@ -688,7 +692,7 @@
         height: 100%;
       }
       .today-card .punch-group-tools .report-btn .report-btn-icon {
-        color: #fbbf24;
+        color: #fb7185;
       }
       .today-card .punch-pause-btn {
         min-height: 3.3rem;
@@ -784,8 +788,8 @@
         color: #94a3b8;
       }
       .today-card .history-event-icon {
-        width: 2rem;
-        height: 2rem;
+        width: 2.32rem;
+        height: 2.32rem;
         border-radius: 999px;
         display: inline-flex;
         align-items: center;
@@ -793,17 +797,20 @@
         line-height: 0;
         flex-shrink: 0;
       }
-      .today-card .history-event-icon svg {
-        width: .9rem;
-        height: .9rem;
-        display: block;
+      .today-card .history-event-glyph {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.08rem;
+        line-height: 1;
+        color: #fff;
+        font-weight: 800;
       }
-      .today-card .history-event-icon.is-in svg {
-        transform: translateX(.04rem);
+      .today-card .history-event-icon.is-in .history-event-glyph {
+        transform: translateX(.07rem);
       }
-      .today-card .history-event-icon.is-out svg {
-        width: .8rem;
-        height: .8rem;
+      .today-card .history-event-icon.is-out .history-event-glyph {
+        font-size: .82rem;
       }
       .today-card .history-event-icon.is-in {
         background: #22c55e;
