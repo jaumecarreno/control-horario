@@ -16,7 +16,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for employee in employees %}
+        {% for employee in active_employees %}
           <tr>
             <td>{{ employee.name }}</td>
             <td>{{ employee.email or '-' }}</td>
@@ -25,9 +25,42 @@
             <td><a href="{{ url_for('admin.employees_edit', employee_id=employee.id) }}">Edit</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No employees found.</td></tr>
+          <tr><td colspan="5">No active employees found.</td></tr>
         {% endfor %}
       </tbody>
     </table>
+
+    {% if inactive_employees %}
+      <details class="inactive-employees-accordion" style="margin-top: 1rem;">
+        <summary>Mostrar inactivos ({{ inactive_employees|length }})</summary>
+        <table style="margin-top: .75rem;">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Current shift</th>
+              <th>Active</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for employee in inactive_employees %}
+              <tr class="employee-row-inactive">
+                <td>{{ employee.name }}</td>
+                <td>{{ employee.email or '-' }}</td>
+                <td>{{ current_shift_by_employee.get(employee.id, '-') }}</td>
+                <td>
+                  No
+                  <div class="muted" style="font-size: .85rem;">
+                    Inactivo desde {{ employee.active_status_changed_at.strftime('%d/%m/%Y %H:%M') }}
+                  </div>
+                </td>
+                <td><a href="{{ url_for('admin.employees_edit', employee_id=employee.id) }}">Edit</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+    {% endif %}
   </section>
 {% endblock %}

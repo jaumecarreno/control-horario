@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select, text
 
@@ -266,3 +266,128 @@ def test_employee_shift_history_hides_migration_sentinel_date(admin_only_client)
     body = page.get_data(as_text=True)
     assert "Asignacion inicial" in body
     assert "01/01/1970" not in body
+
+
+def test_employees_list_groups_inactive_in_collapsible_section(admin_only_client):
+    _login_admin(admin_only_client)
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Activo",
+            "email": "activo@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Inactivo",
+            "email": "inactivo@example.com",
+            "pin": "1234",
+        },
+        follow_redirects=False,
+    )
+
+    with admin_only_client.application.app_context():
+        inactive_employee = db.session.execute(select(Employee).where(Employee.email == "inactivo@example.com")).scalar_one()
+        inactive_employee.active = False
+        inactive_employee.active_status_changed_at = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        db.session.commit()
+
+    page = admin_only_client.get("/admin/employees", follow_redirects=True)
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+
+    assert "Mostrar inactivos (1)" in body
+    assert "employee-row-inactive" in body
+
+    active_pos = body.find("Empleado Activo")
+    accordion_pos = body.find("Mostrar inactivos (1)")
+    inactive_pos = body.find("Empleado Inactivo")
+    assert active_pos != -1
+    assert accordion_pos != -1
+    assert inactive_pos != -1
+    assert active_pos < accordion_pos < inactive_pos
+
+
+def test_employee_active_status_changed_at_updates_when_active_flag_changes(admin_only_client):
+    _login_admin(admin_only_client)
+    admin_only_client.post(
+        "/admin/employees/new",
+        data={
+            "name": "Empleado Estado",
+            "email": "estado@example.com",
+            "pin": "1234",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+
+    with admin_only_client.application.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "estado@example.com")).scalar_one()
+        employee_id = employee.id
+        baseline = datetime(2020, 1, 1)
+        employee.active_status_changed_at = baseline
+        db.session.commit()
+
+    same_status = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Estado",
+            "email": "estado@example.com",
+            "pin": "",
+            "active": "y",
+            "assignment_shift_id": "",
+            "assignment_effective_from": "",
+        },
+        follow_redirects=False,
+    )
+    assert same_status.status_code == 302
+
+    with admin_only_client.application.app_context():
+        employee = db.session.get(Employee, employee_id)
+        assert employee is not None
+        assert employee.active is True
+        assert employee.active_status_changed_at == baseline
+
+    to_inactive = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Estado",
+            "email": "estado@example.com",
+            "pin": "",
+            "assignment_shift_id": "",
+            "assignment_effective_from": "",
+        },
+        follow_redirects=False,
+    )
+    assert to_inactive.status_code == 302
+
+    with admin_only_client.application.app_context():
+        employee = db.session.get(Employee, employee_id)
+        assert employee is not None
+        assert employee.active is False
+        assert employee.active_status_changed_at > baseline
+        inactive_changed_at = employee.active_status_changed_at
+
+    to_active = admin_only_client.post(
+        f"/admin/employees/{employee_id}/edit",
+        data={
+            "name": "Empleado Estado",
+            "email": "estado@example.com",
+            "pin": "",
+            "active": "y",
+            "assignment_shift_id": "",
+            "assignment_effective_from": "",
+        },
+        follow_redirects=False,
+    )
+    assert to_active.status_code == 302
+
+    with admin_only_client.application.app_context():
+        employee = db.session.get(Employee, employee_id)
+        assert employee is not None
+        assert employee.active is True
+        assert employee.active_status_changed_at > inactive_changed_at

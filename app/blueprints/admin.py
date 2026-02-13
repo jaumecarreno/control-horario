@@ -134,6 +134,8 @@ def _current_shift_names_by_employee(employee_ids: list[UUID], today: date) -> d
 @roles_required(ADMIN_ROLES)
 def employees_list():
     employees = list(db.session.execute(select(Employee).order_by(Employee.name.asc())).scalars().all())
+    active_employees = [employee for employee in employees if employee.active]
+    inactive_employees = [employee for employee in employees if not employee.active]
     current_shift_by_employee: dict[UUID, str] = {}
     try:
         current_shift_by_employee = _current_shift_names_by_employee(
@@ -149,7 +151,8 @@ def employees_list():
         flash("No se pudieron cargar los turnos asignados de empleados.", "warning")
     return render_template(
         "admin/employees.html",
-        employees=employees,
+        active_employees=active_employees,
+        inactive_employees=inactive_employees,
         current_shift_by_employee=current_shift_by_employee,
     )
 
@@ -271,7 +274,10 @@ def employees_edit(employee_id: UUID):
 
         employee.name = employee_name
         employee.email = employee_email
-        employee.active = bool(form.active.data)
+        new_active_status = bool(form.active.data)
+        if employee.active != new_active_status:
+            employee.active_status_changed_at = datetime.now(timezone.utc)
+        employee.active = new_active_status
         if form.pin.data:
             employee.pin_hash = hash_secret(form.pin.data)
 
@@ -342,6 +348,7 @@ def employees_edit(employee_id: UUID):
                 "name": employee.name,
                 "email": employee.email,
                 "active": employee.active,
+                "active_status_changed_at": employee.active_status_changed_at.isoformat(),
                 "pin_updated": bool(form.pin.data),
             },
         )

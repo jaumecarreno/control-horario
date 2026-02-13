@@ -22,6 +22,7 @@
         --accent: #15803d;
         --danger: #dc2626;
         --border: #2c3648;
+        --inactive-row-bg: rgba(148, 163, 184, 0.14);
       }
       :root[data-theme="light"] {
         --bg: #f2f4f7;
@@ -31,6 +32,7 @@
         --accent: #0f766e;
         --danger: #b91c1c;
         --border: #dbe3ea;
+        --inactive-row-bg: rgba(148, 163, 184, 0.2);
       }
       * { box-sizing: border-box; }
       body {
@@ -76,6 +78,21 @@
       button.danger { background: var(--danger); }
       table { width: 100%; border-collapse: collapse; }
       th, td { text-align: left; padding: .5rem; border-bottom: 1px solid var(--border); }
+      .inactive-employees-accordion {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: .55rem .7rem;
+      }
+      .inactive-employees-accordion summary {
+        cursor: pointer;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .employee-row-inactive {
+        color: var(--muted);
+        background: var(--inactive-row-bg);
+      }
+      .employee-row-inactive a { color: var(--muted); }
       .flash { padding: .5rem .7rem; margin-bottom: .6rem; border-radius: 8px; }
       .flash.success { background: #dcfce7; color: #166534; }
       .flash.info { background: #e0f2fe; color: #075985; }
