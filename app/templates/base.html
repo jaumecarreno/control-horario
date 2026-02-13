@@ -470,6 +470,45 @@
       .kiosk-card { max-width: 620px; }
       .kiosk-clock-wrap { margin-top: .25rem; margin-bottom: 1rem; }
       .kiosk-clock { font-size: 1.4rem; font-variant-numeric: tabular-nums; }
+      .balance-table-wrap {
+        width: min(100%, 640px);
+        margin: 0 auto .55rem;
+      }
+      .balance-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--panel);
+        font-size: .84rem;
+      }
+      .balance-table th,
+      .balance-table td {
+        padding: .3rem .45rem;
+        border-bottom: 1px solid var(--border);
+        font-variant-numeric: tabular-nums;
+      }
+      .balance-table thead th {
+        background: var(--panel-muted);
+        font-size: .77rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .02em;
+      }
+      .balance-table tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      .balance-table th:first-child,
+      .balance-table td:first-child {
+        text-align: left;
+      }
+      .balance-table th:not(:first-child),
+      .balance-table td:not(:first-child) {
+        text-align: center;
+        white-space: nowrap;
+      }
       .kiosk-btn.in { background: linear-gradient(135deg, var(--accent), #6366f1); }
       .kiosk-btn.out { background: linear-gradient(135deg, var(--danger), #f87171); }
       .kiosk-btn.pause { background: #f59e0b; color: #2f2400; }

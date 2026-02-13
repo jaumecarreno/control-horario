@@ -1,6 +1,42 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
   <div class="kiosk-toolbar">
     <div class="kiosk-clock-wrap">
+      <div class="balance-table-wrap" aria-label="Saldos">
+        <table class="balance-table">
+          <thead>
+            <tr>
+              <th>Tipo de apunte</th>
+              <th>A&ntilde;o</th>
+              <th>Asignado</th>
+              <th>Disfrutado</th>
+              <th>Pendiente</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Dias de vacaciones</td>
+              <td>2026</td>
+              <td>22</td>
+              <td>-6</td>
+              <td>14</td>
+            </tr>
+            <tr>
+              <td>Dias de asuntos propios</td>
+              <td>2026</td>
+              <td>3</td>
+              <td>-1</td>
+              <td>2</td>
+            </tr>
+            <tr>
+              <td>Dias adicionales</td>
+              <td>2026</td>
+              <td>8</td>
+              <td>-2</td>
+              <td>6</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p class="muted">Hora actual</p>
       <div class="kiosk-clock" id="live-clock">--:--:--</div>
     </div>
