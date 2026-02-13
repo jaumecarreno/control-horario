@@ -147,6 +147,9 @@
         gap: .45rem;
       }
       header nav .nav-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .55rem;
         margin: 0;
         color: var(--muted);
         text-decoration: none;
@@ -155,6 +158,24 @@
         padding: .5rem .85rem;
         font-weight: 600;
         transition: all .15s ease;
+      }
+      header nav .nav-link .nav-link-label {
+        line-height: 1.1;
+      }
+      header nav .nav-link .nav-link-icon {
+        width: 1.18rem;
+        height: 1.18rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: currentColor;
+        flex-shrink: 0;
+        opacity: 1;
+      }
+      header nav .nav-link .nav-link-icon svg {
+        width: 100%;
+        height: 100%;
+        display: block;
       }
       header nav .nav-link:hover {
         color: var(--text);
@@ -167,12 +188,33 @@
         background: linear-gradient(135deg, var(--accent), #6366f1);
         box-shadow: 0 10px 22px -16px rgba(79, 70, 229, 0.85);
       }
+      header nav .nav-link.is-active .nav-link-icon {
+        opacity: 1;
+      }
+      :root[data-theme="light"] header nav .nav-link {
+        color: #334155;
+      }
+      :root[data-theme="light"] header nav .nav-link .nav-link-icon {
+        color: #64748b;
+      }
+      :root[data-theme="light"] header nav .nav-link:hover .nav-link-icon {
+        color: #334155;
+      }
+      :root[data-theme="light"] header nav .nav-link.is-active .nav-link-icon {
+        color: #eef2ff;
+      }
       header nav .nav-logout-form {
         display: block;
         margin: 0;
       }
       header nav .nav-logout-form button {
         width: auto;
+      }
+      header nav .nav-logout-form .nav-logout-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .52rem;
       }
       header nav .nav-user-card {
         display: flex;
@@ -587,8 +629,8 @@
         margin-bottom: .2rem;
       }
       .today-card .punch-actions .kiosk-icon svg {
-        width: 2rem;
-        height: 2rem;
+        width: 2.45rem;
+        height: 2.45rem;
       }
       .today-card .kiosk-btn.in {
         background: rgba(99, 102, 241, 0.08);
@@ -632,13 +674,13 @@
         justify-content: center;
         margin: 0;
         font-size: 1.5rem;
-        border: 1px solid rgba(251, 113, 133, 0.6);
-        background: rgba(190, 24, 93, 0.08);
+        border: 1px solid rgba(244, 63, 94, 0.72);
+        background: rgba(76, 29, 46, 0.52);
         color: #fda4af;
       }
       .today-card .report-btn-icon {
-        width: 1.2rem;
-        height: 1.2rem;
+        width: 1.25rem;
+        height: 1.25rem;
         display: inline-flex;
       }
       .today-card .report-btn-icon svg {
@@ -646,7 +688,7 @@
         height: 100%;
       }
       .today-card .punch-group-tools .report-btn .report-btn-icon {
-        color: #fb7185;
+        color: #fbbf24;
       }
       .today-card .punch-pause-btn {
         min-height: 3.3rem;
@@ -748,10 +790,20 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        line-height: 0;
+        flex-shrink: 0;
       }
       .today-card .history-event-icon svg {
         width: .9rem;
         height: .9rem;
+        display: block;
+      }
+      .today-card .history-event-icon.is-in svg {
+        transform: translateX(.04rem);
+      }
+      .today-card .history-event-icon.is-out svg {
+        width: .8rem;
+        height: .8rem;
       }
       .today-card .history-event-icon.is-in {
         background: #22c55e;
@@ -899,8 +951,26 @@
       .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
       .status-pill.status-in { background: linear-gradient(135deg, var(--accent), #6366f1); }
       .status-pill.status-out { background: linear-gradient(135deg, var(--danger), #f87171); }
-      .kiosk-history ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+      .kiosk-history ul { margin: .4rem 0 0; }
       .kiosk-history li { margin-bottom: .25rem; }
+      .kiosk-history ul {
+        list-style: none;
+        padding-left: 0;
+      }
+      :root[data-theme="light"] .today-card {
+        border-color: rgba(129, 140, 248, 0.34);
+        box-shadow: 0 28px 42px -34px rgba(15, 23, 42, 0.72), 0 10px 24px -20px rgba(99, 102, 241, 0.7);
+      }
+      :root[data-theme="light"] .today-card .balance-card,
+      :root[data-theme="light"] .today-card .punch-group,
+      :root[data-theme="light"] .today-card .kiosk-history {
+        background: rgba(15, 23, 42, 0.6);
+      }
+      :root[data-theme="light"] .today-card .theme-btn {
+        border-color: rgba(148, 163, 184, 0.45);
+        background: rgba(15, 23, 42, 0.2);
+        color: #cbd5e1;
+      }
 
       .report-btn {
         width: auto;
@@ -1237,13 +1307,46 @@
       <nav id="site-nav">
         {% set endpoint = request.endpoint or '' %}
         {% if current_user.is_authenticated %}
-          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">Mis horas</a>
-          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">Historial</a>
-          <a class="nav-link{{ ' is-active' if endpoint.startswith('admin.') else '' }}" href="{{ url_for('admin.employees_list') }}">Admin</a>
-          <a class="nav-link{{ ' is-active' if endpoint == 'auth.select_tenant' else '' }}" href="{{ url_for('auth.select_tenant') }}">Tenant</a>
+          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">
+            <span class="nav-link-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4.8 10.3L12 4.8L19.2 10.3V18.2C19.2 19.1 18.5 19.8 17.6 19.8H6.4C5.5 19.8 4.8 19.1 4.8 18.2V10.3Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+                <path d="M9.6 19.8V13.8H14.4V19.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span class="nav-link-label">Mis horas</span>
+          </a>
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">
+            <span class="nav-link-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4.8 12A7.2 7.2 0 1 0 12 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                <path d="M12 1.8V4.8H9" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 8.4V12.2L14.8 13.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <span class="nav-link-label">Historial</span>
+          </a>
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('admin.') else '' }}" href="{{ url_for('admin.employees_list') }}">
+            <span class="nav-link-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 3.4V12L17.7 15.3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="12" cy="12" r="8.6" stroke="currentColor" stroke-width="1.9"/>
+              </svg>
+            </span>
+            <span class="nav-link-label">Admin</span>
+          </a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="inline nav-logout-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button class="secondary" type="submit">Logout</button>
+            <button class="secondary nav-logout-btn" type="submit">
+              <span class="nav-link-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M10.2 6.4H6.8C5.9 6.4 5.2 7.1 5.2 8V16C5.2 16.9 5.9 17.6 6.8 17.6H10.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                  <path d="M13.2 8.5L17.2 12L13.2 15.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M17.2 12H9.1" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+                </svg>
+              </span>
+              <span class="nav-link-label">Cerrar sesion</span>
+            </button>
           </form>
           <div class="nav-user-card" aria-label="Perfil de usuario">
             <span class="nav-user-avatar">{{ nav_profile_initials }}</span>
