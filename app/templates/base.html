@@ -174,6 +174,51 @@
       header nav .nav-logout-form button {
         width: auto;
       }
+      header nav .nav-user-card {
+        display: flex;
+        align-items: center;
+        gap: .68rem;
+        padding: .72rem .78rem;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--panel-muted);
+        margin-top: .72rem;
+      }
+      .nav-user-avatar {
+        width: 2.05rem;
+        height: 2.05rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .03em;
+        flex-shrink: 0;
+      }
+      .nav-user-meta {
+        min-width: 0;
+      }
+      .nav-user-name {
+        font-size: .92rem;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .nav-user-role {
+        font-size: .7rem;
+        line-height: 1.2;
+        margin-top: .14rem;
+        text-transform: uppercase;
+        letter-spacing: .07em;
+        font-weight: 700;
+        color: var(--muted);
+      }
       main {
         max-width: none;
         margin: 0;
@@ -452,8 +497,26 @@
       }
       .kiosk-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
       .theme-toggle { display: inline-flex; gap: .35rem; }
-      .theme-btn { width: auto; padding: .45rem .62rem; border-radius: 999px; background: transparent; color: var(--text); border: 1px solid var(--border); }
-      .theme-btn.is-selected { background: var(--panel); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+      .theme-btn {
+        width: auto;
+        min-width: 2.35rem;
+        min-height: 2.35rem;
+        padding: .45rem .62rem;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      #theme-toggle-icon {
+        width: 1.15rem;
+        height: 1.15rem;
+        display: inline-flex;
+      }
+      #theme-toggle-icon svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
       .status-pill { padding: .15rem .45rem; border-radius: 999px; color: #fff; font-size: .85rem; }
       .status-pill.status-in { background: linear-gradient(135deg, var(--accent), #6366f1); }
       .status-pill.status-out { background: linear-gradient(135deg, var(--danger), #f87171); }
@@ -750,13 +813,20 @@
         {% set endpoint = request.endpoint or '' %}
         {% if current_user.is_authenticated %}
           <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">Mis horas</a>
-          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">Control de presencia</a>
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">Historial</a>
           <a class="nav-link{{ ' is-active' if endpoint.startswith('admin.') else '' }}" href="{{ url_for('admin.employees_list') }}">Admin</a>
           <a class="nav-link{{ ' is-active' if endpoint == 'auth.select_tenant' else '' }}" href="{{ url_for('auth.select_tenant') }}">Tenant</a>
           <form method="post" action="{{ url_for('auth.logout') }}" class="inline nav-logout-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="secondary" type="submit">Logout</button>
           </form>
+          <div class="nav-user-card" aria-label="Perfil de usuario">
+            <span class="nav-user-avatar">{{ nav_profile_initials }}</span>
+            <div class="nav-user-meta">
+              <div class="nav-user-name">{{ nav_profile_name }}</div>
+              <div class="nav-user-role">{{ nav_profile_role }}</div>
+            </div>
+          </div>
         {% else %}
           <a class="nav-link{{ ' is-active' if endpoint == 'auth.login' else '' }}" href="{{ url_for('auth.login') }}">Login</a>
         {% endif %}

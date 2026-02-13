@@ -1,0 +1,5 @@
+{% set endpoint = request.endpoint or '' %}
+<nav class="inline" style="margin-bottom: 1rem;">
+  <a class="{{ 'is-active' if endpoint == 'employee.presence_control' else '' }}" href="{{ url_for('employee.presence_control', month=selected_month) }}">Historial</a>
+  <a class="{{ 'is-active' if endpoint == 'employee.pause_control' else '' }}" href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de pausas</a>
+</nav>

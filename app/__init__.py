@@ -45,6 +45,43 @@ def create_app(config_object: type[Config] = Config) -> Flask:
     app.register_blueprint(employee_bp)
     app.register_blueprint(admin_bp)
 
+    @app.context_processor
+    def inject_nav_profile() -> dict[str, str]:
+        if not current_user.is_authenticated:
+            return {}
+
+        from app.models import Employee
+        from app.tenant import current_membership
+
+        membership = current_membership()
+        profile_name = ""
+        profile_role = "USER"
+
+        if membership is not None:
+            profile_role = getattr(membership.role, "value", str(membership.role))
+            if membership.employee_id is not None:
+                employee = db.session.get(Employee, membership.employee_id)
+                if employee is not None and employee.name:
+                    profile_name = employee.name.strip()
+
+        if not profile_name:
+            email = getattr(current_user, "email", "") or ""
+            profile_name = email.split("@", 1)[0] if email else "Usuario"
+            profile_name = profile_name.strip() or "Usuario"
+
+        name_parts = [chunk for chunk in profile_name.split() if chunk]
+        if len(name_parts) >= 2:
+            profile_initials = (name_parts[0][0] + name_parts[1][0]).upper()
+        else:
+            profile_initials = profile_name[:2].upper()
+        profile_initials = profile_initials or "U"
+
+        return {
+            "nav_profile_name": profile_name,
+            "nav_profile_role": profile_role,
+            "nav_profile_initials": profile_initials,
+        }
+
     @app.before_request
     def load_request_db_context() -> None:
         db.session.info.pop("tenant_id", None)

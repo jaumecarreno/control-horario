@@ -81,7 +81,7 @@ def test_manual_incident_creates_event_and_is_visible_in_presence(client):
     page = client.get("/me/presence-control?month=2026-02")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
-    assert "Control de presencia" in html
+    assert "Historial" in html
     assert "Manual" in html
 
 
@@ -167,7 +167,7 @@ def test_presence_control_falls_back_when_shifts_table_is_missing(client, app):
     page = client.get("/me/presence-control")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
-    assert "Control de presencia" in html
+    assert "Historial" in html
     assert "Sin turno configurado. Se aplica el valor por defecto." in html
 
 
@@ -223,3 +223,4 @@ def test_presence_control_uses_employee_shift_history_for_expected_hours(client,
     html = page.get_data(as_text=True)
     assert "Esperado 115:00" in html
     assert "Balance -115:00" in html
+

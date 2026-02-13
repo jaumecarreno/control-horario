@@ -2,10 +2,10 @@
 
 {% block content %}
   <section class="card">
+    {% include "employee/_sections.html" %}
     <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; flex-wrap:wrap;">
       <div>
-        <h1 style="margin-bottom:.25rem;">Control de presencia</h1>
-        <p style="margin:.15rem 0;"><a href="{{ url_for('employee.pause_control', month=selected_month) }}">Control de pausas</a></p>
+        <h1 style="margin-bottom:.25rem;">Historial</h1>
         <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
       </div>
       <div class="month-nav">

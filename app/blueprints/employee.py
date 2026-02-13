@@ -687,6 +687,7 @@ def pause_control():
         "employee/pause_control.html",
         employee=employee,
         month_rows=month_rows,
+        selected_month=f"{selected_year:04d}-{selected_month:02d}",
         month_label=month_start.strftime("%B %Y"),
         month_paused=_minutes_to_hhmm(month_paused),
         month_expected=_minutes_to_hhmm(month_expected),
