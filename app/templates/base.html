@@ -674,13 +674,14 @@
         justify-content: center;
         margin: 0;
         font-size: 1.5rem;
-        border: 1px solid rgba(100, 116, 139, 0.52);
+        border: 1px solid rgba(71, 85, 105, 0.62);
         background: rgba(15, 23, 42, 0.38);
         color: #e2e8f0;
       }
       .today-card .punch-group-tools .report-btn:hover {
-        border-color: rgba(148, 163, 184, 0.62);
+        border-color: rgba(100, 116, 139, 0.8);
         background: rgba(30, 41, 59, 0.52);
+        color: #f8fafc;
       }
       .today-card .report-btn-icon {
         width: 1.25rem;
@@ -765,18 +766,28 @@
         list-style: none;
         margin: .7rem 0 0;
         padding: 0;
+        position: relative;
+      }
+      .today-card .history-feed::before {
+        content: "";
+        position: absolute;
+        left: 1.12rem;
+        top: .38rem;
+        bottom: .4rem;
+        width: 2px;
+        background: linear-gradient(180deg, rgba(71, 85, 105, 0.85) 0%, rgba(71, 85, 105, 0.8) 75%, rgba(71, 85, 105, 0) 100%);
       }
       .today-card .history-feed-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: .8rem;
-        padding: .42rem 0;
+        padding: .42rem 0 .42rem 2.95rem;
+        position: relative;
       }
       .today-card .history-feed-left {
-        display: flex;
-        align-items: center;
-        gap: .58rem;
+        display: block;
+        min-width: 0;
       }
       .today-card .history-feed-left strong {
         display: block;
@@ -788,29 +799,29 @@
         color: #94a3b8;
       }
       .today-card .history-event-icon {
-        width: 2.32rem;
-        height: 2.32rem;
+        width: 2.08rem;
+        height: 2.08rem;
         border-radius: 999px;
-        display: inline-flex;
+        display: flex;
         align-items: center;
         justify-content: center;
         line-height: 0;
         flex-shrink: 0;
+        position: absolute;
+        left: .08rem;
+        top: 50%;
+        transform: translateY(-50%);
+        z-index: 1;
+        border: 3px solid rgba(15, 23, 42, 0.92);
       }
-      .today-card .history-event-glyph {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.08rem;
-        line-height: 1;
+      .today-card .history-event-icon svg {
+        width: .95rem;
+        height: .95rem;
+        display: block;
         color: #fff;
-        font-weight: 800;
       }
-      .today-card .history-event-icon.is-in .history-event-glyph {
-        transform: translateX(.07rem);
-      }
-      .today-card .history-event-icon.is-out .history-event-glyph {
-        font-size: .82rem;
+      .today-card .history-event-icon.is-in svg {
+        transform: translateX(.06rem);
       }
       .today-card .history-event-icon.is-in {
         background: #22c55e;
@@ -819,6 +830,10 @@
       .today-card .history-event-icon.is-out {
         background: #f43f5e;
         color: #fff;
+      }
+      .today-card .history-event-icon.is-out svg {
+        width: .78rem;
+        height: .78rem;
       }
       .today-card .history-feed-right {
         text-align: right;
