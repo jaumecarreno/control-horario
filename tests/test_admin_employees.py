@@ -250,6 +250,7 @@ def test_employee_shift_history_hides_migration_sentinel_date(admin_only_client)
         employee = db.session.execute(select(Employee).where(Employee.email == "cuatro@example.com")).scalar_one()
         shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
         employee_id = employee.id
+        initial_created_at = datetime(2026, 2, 5, 10, 30)
         db.session.add(
             EmployeeShiftAssignment(
                 tenant_id=employee.tenant_id,
@@ -257,6 +258,7 @@ def test_employee_shift_history_hides_migration_sentinel_date(admin_only_client)
                 shift_id=shift.id,
                 effective_from=date(1970, 1, 1),
                 effective_to=None,
+                created_at=initial_created_at,
             )
         )
         db.session.commit()
@@ -264,7 +266,7 @@ def test_employee_shift_history_hides_migration_sentinel_date(admin_only_client)
     page = admin_only_client.get(f"/admin/employees/{employee_id}/edit", follow_redirects=True)
     assert page.status_code == 200
     body = page.get_data(as_text=True)
-    assert "Asignacion inicial" in body
+    assert "05/02/2026" in body
     assert "01/01/1970" not in body
 
 

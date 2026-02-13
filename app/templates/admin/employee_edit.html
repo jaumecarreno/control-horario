@@ -54,7 +54,7 @@
             <td>{{ shift.name if shift else "-" }}</td>
             <td>
               {% if assignment.effective_from.isoformat() == "1970-01-01" %}
-                Asignacion inicial
+                {{ assignment.created_at.strftime('%d/%m/%Y') }}
               {% else %}
                 {{ assignment.effective_from.strftime('%d/%m/%Y') }}
               {% endif %}

@@ -6,9 +6,9 @@
     <form method="post">
       {{ form.hidden_tag() }}
       <label for="{{ form.email.id }}">Email</label>
-      {{ form.email() }}
+      {{ form.email(value=form.email.data or "jaume.carreno@gmail.com") }}
       <label for="{{ form.password.id }}">Password</label>
-      {{ form.password() }}
+      {{ form.password(value=form.password.data or "12345678") }}
       <div class="inline" style="margin: .6rem 0 1rem;">
         {{ form.remember() }}
         <span>Remember me</span>
@@ -17,4 +17,3 @@
     </form>
   </section>
 {% endblock %}
-
