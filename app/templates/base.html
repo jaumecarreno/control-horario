@@ -15,31 +15,33 @@
     </script>
     <style>
       :root {
-        --bg: #12151c;
-        --panel: #1a202c;
-        --text: #e5e7eb;
-        --muted: #a8b1c2;
+        --bg: #0f172a;
+        --panel: #1e293b;
+        --text: #f8fafc;
+        --muted: #94a3b8;
         --accent: #15803d;
         --danger: #dc2626;
-        --border: #2c3648;
-        --inactive-row-bg: rgba(148, 163, 184, 0.14);
+        --border: #334155;
+        --inactive-row-bg: #1e293b;
+        --card-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.2), 0 1px 2px -1px rgb(0 0 0 / 0.15);
       }
       :root[data-theme="light"] {
-        --bg: #f2f4f7;
+        --bg: #f8fafc;
         --panel: #ffffff;
         --text: #1e293b;
         --muted: #64748b;
         --accent: #0f766e;
         --danger: #b91c1c;
-        --border: #dbe3ea;
-        --inactive-row-bg: rgba(148, 163, 184, 0.2);
+        --border: #e2e8f0;
+        --inactive-row-bg: #f1f5f9;
+        --card-shadow: 0 4px 6px -1px rgb(15 23 42 / 0.05), 0 1px 2px -1px rgb(15 23 42 / 0.06);
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
         font-family: "Segoe UI", Tahoma, sans-serif;
         color: var(--text);
-        background: radial-gradient(circle at 20% 10%, rgba(15,118,110,.22), var(--bg) 35%);
+        background: radial-gradient(circle at 20% 10%, rgba(37,99,235,.18), var(--bg) 35%);
       }
       header {
         padding: 1rem 1.5rem;
@@ -53,7 +55,8 @@
       .card {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 10px;
+        border-radius: 12px;
+        box-shadow: var(--card-shadow);
         padding: 1rem;
         margin-bottom: 1rem;
       }
