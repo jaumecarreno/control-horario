@@ -443,6 +443,38 @@
       .today-card .punch-actions form {
         width: 100%;
       }
+      .today-card .punch-group-tools {
+        margin-top: .7rem;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: .5rem;
+      }
+      .today-card .punch-group-tools .pause-form {
+        margin: 0;
+      }
+      .today-card .punch-group-tools .pause-form button {
+        width: 100%;
+      }
+      .today-card .punch-group-tools .report-btn {
+        width: 100%;
+        justify-content: center;
+        margin: 0;
+      }
+      .today-card .punch-pause-btn {
+        font-size: 1rem;
+        padding: .65rem .9rem;
+      }
+      .today-card .punch-group-meta {
+        margin-top: .6rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: .5rem 1rem;
+        flex-wrap: wrap;
+      }
+      .today-card .punch-group-meta p {
+        margin: 0;
+      }
       .today-card .kiosk-history {
         width: 100%;
         max-width: 640px;
@@ -473,6 +505,25 @@
       .balance-table-wrap {
         width: min(100%, 640px);
         margin: 0 auto .55rem;
+      }
+      .absence-link-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto .55rem;
+        padding: .42rem .85rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--panel-muted);
+        color: var(--text);
+        text-decoration: none;
+        font-size: .82rem;
+        font-weight: 700;
+      }
+      .absence-link-btn:hover {
+        border-color: var(--accent);
+        background: var(--panel);
+        color: var(--accent);
       }
       .balance-table {
         width: 100%;
@@ -765,6 +816,9 @@
 
       @media (min-width: 681px) {
         .today-card .punch-actions {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .today-card .punch-group-tools {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
         .month-nav-btn {

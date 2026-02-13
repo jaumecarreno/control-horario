@@ -17,7 +17,7 @@
               <td>Dias de vacaciones</td>
               <td>2026</td>
               <td>22</td>
-              <td>-6</td>
+              <td>-8</td>
               <td>14</td>
             </tr>
             <tr>
@@ -37,6 +37,7 @@
           </tbody>
         </table>
       </div>
+      <a class="absence-link-btn" href="{{ url_for('employee.me_leaves') }}">Solicitar ausencia</a>
       <p class="muted">Hora actual</p>
       <div class="kiosk-clock" id="live-clock">--:--:--</div>
     </div>
@@ -88,6 +89,47 @@
         </form>
       {% endfor %}
     </div>
+
+    <div class="punch-group-tools">
+      <button type="button" class="report-btn" id="open-report-modal">
+        <span aria-hidden="true">&#9888;&#65039;</span>
+        Reportar incidencia
+      </button>
+
+      <form
+        method="post"
+        action="{{ url_for('employee.toggle_pause') }}"
+        hx-post="{{ url_for('employee.toggle_pause') }}"
+        hx-target="#punch-state"
+        hx-swap="outerHTML"
+        class="pause-form"
+      >
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="kiosk-btn punch-pause-btn {% if pause_active %}resume{% else %}pause{% endif %}">
+          <span class="kiosk-icon" aria-hidden="true">
+            {% if pause_active %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 6V18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M8 6L18 12L8 18V6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% else %}
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 4H7V20H9V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M17 4H15V20H17V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            {% endif %}
+          </span>
+          {% if pause_active %}Reanudar{% else %}Registrar PAUSA{% endif %}
+        </button>
+      </form>
+    </div>
+
+    <div class="punch-group-meta">
+      {% if pause_active %}
+        <p>Tiempo en Pausa: <strong id="pause-live-time">{{ running_pause_time }}</strong></p>
+      {% endif %}
+      <p>Pausas hoy: <strong>{{ paused_today }}</strong></p>
+    </div>
   </div>
 
   <div class="kiosk-history" style="margin-top: 1rem;">
@@ -102,44 +144,6 @@
       <p class="muted">Sin marcajes de entrada/salida hoy.</p>
     {% endif %}
   </div>
-
-
-  <button type="button" class="report-btn" id="open-report-modal">
-    <span aria-hidden="true">⚠️</span>
-    Reportar incidencia
-  </button>
-
-  <form
-    method="post"
-    action="{{ url_for('employee.toggle_pause') }}"
-    hx-post="{{ url_for('employee.toggle_pause') }}"
-    hx-target="#punch-state"
-    hx-swap="outerHTML"
-    style="margin-top:.7rem;"
-  >
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="kiosk-btn {% if pause_active %}resume{% else %}pause{% endif %}">
-      <span class="kiosk-icon" aria-hidden="true">
-        {% if pause_active %}
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 6V18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M8 6L18 12L8 18V6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        {% else %}
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M9 4H7V20H9V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M17 4H15V20H17V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        {% endif %}
-      </span>
-      {% if pause_active %}Reanudar{% else %}Registrar PAUSA{% endif %}
-    </button>
-  </form>
-
-  {% if pause_active %}
-    <p style="margin-top:.6rem;">Tiempo en Pausa: <strong id="pause-live-time">{{ running_pause_time }}</strong></p>
-  {% endif %}
-  <p style="margin-top:.6rem;">Pausas hoy: <strong>{{ paused_today }}</strong></p>
 </div>
 
 <div class="report-modal" id="report-modal" aria-hidden="true">
