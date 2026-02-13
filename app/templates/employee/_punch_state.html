@@ -66,16 +66,12 @@
           >
             <span class="kiosk-icon" aria-hidden="true">
               {% if button.slug == 'in' %}
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M10 7L15 12L10 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M15 12H3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M21 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M8.5 6.5L17 12L8.5 17.5V6.5Z"/>
                 </svg>
               {% else %}
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M14 7L9 12L14 17" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M9 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M3 4V20" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                  <rect x="7.2" y="7.2" width="9.6" height="9.6" rx="1.8" stroke="currentColor" stroke-width="2.1"/>
                 </svg>
               {% endif %}
             </span>
@@ -87,7 +83,13 @@
 
     <div class="punch-group-tools">
       <button type="button" class="report-btn" id="open-report-modal">
-        <span aria-hidden="true">&#9888;&#65039;</span>
+        <span class="report-btn-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="8.1" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 8.2V13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="12" cy="16.2" r="1.1" fill="currentColor"/>
+          </svg>
+        </span>
         Reportar incidencia
       </button>
 
@@ -103,14 +105,14 @@
         <button type="submit" class="kiosk-btn punch-pause-btn {% if pause_active %}resume{% else %}pause{% endif %}">
           <span class="kiosk-icon" aria-hidden="true">
             {% if pause_active %}
-              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 6V18" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M8 6L18 12L8 18V6Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8.5 6.5L17 12L8.5 17.5V6.5Z"/>
               </svg>
             {% else %}
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M9 4H7V20H9V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M17 4H15V20H17V4Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M6.5 8.3H13.2V12.8C13.2 14.6 11.8 16 10 16H9.7C7.9 16 6.5 14.6 6.5 12.8V8.3Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
+                <path d="M13.2 9.5H15.6C16.4 9.5 17 10.1 17 10.9C17 11.7 16.4 12.3 15.6 12.3H13.2" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5.5 17.8H14.3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
               </svg>
             {% endif %}
           </span>
@@ -127,12 +129,46 @@
     </div>
   </div>
 
-  <div class="kiosk-history" style="margin-top: 1rem;">
-    <h3 style="margin-bottom: .25rem;">Historial reciente</h3>
+  <div class="kiosk-history">
+    <div class="kiosk-history-head">
+      <h3>
+        <span class="history-title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 6V12L16 14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.9"/>
+          </svg>
+        </span>
+        Historial reciente
+      </h3>
+      <a href="{{ url_for('employee.presence_control') }}">Ver todo</a>
+    </div>
     {% if recent_punches %}
-      <ul>
+      <ul class="history-feed">
         {% for row in recent_punches %}
-          <li>{{ row.label }} - {{ row.ts }}{{ row.manual }}</li>
+          {% set is_in = 'Entrada' in row.label %}
+          <li class="history-feed-item">
+            <div class="history-feed-left">
+              <span class="history-event-icon {{ 'is-in' if is_in else 'is-out' }}" aria-hidden="true">
+                {% if is_in %}
+                  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8.5 6.5L17 12L8.5 17.5V6.5Z"/>
+                  </svg>
+                {% else %}
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="7.2" y="7.2" width="9.6" height="9.6" rx="1.8" fill="currentColor"/>
+                  </svg>
+                {% endif %}
+              </span>
+              <div>
+                <strong>{{ row.label }}</strong>
+                <span>Hoy{{ row.manual }}</span>
+              </div>
+            </div>
+            <div class="history-feed-right">
+              <strong>{{ row.ts }}</strong>
+              <span>Registrado</span>
+            </div>
+          </li>
         {% endfor %}
       </ul>
     {% else %}

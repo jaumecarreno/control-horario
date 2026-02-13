@@ -456,7 +456,7 @@
       }
       .today-card .balance-cards {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: .8rem;
         padding-right: 3.15rem;
       }
@@ -583,9 +583,12 @@
         color: #cbd5e1;
         font-size: 2rem;
       }
+      .today-card .punch-actions .kiosk-btn .kiosk-icon {
+        margin-bottom: .2rem;
+      }
       .today-card .punch-actions .kiosk-icon svg {
-        width: 1.95rem;
-        height: 1.95rem;
+        width: 2rem;
+        height: 2rem;
       }
       .today-card .kiosk-btn.in {
         background: rgba(99, 102, 241, 0.08);
@@ -628,26 +631,35 @@
         width: 100%;
         justify-content: center;
         margin: 0;
-        font-size: 1.4rem;
-        border: 1px solid rgba(248, 113, 113, 0.55);
-        background: rgba(239, 68, 68, 0.08);
+        font-size: 1.5rem;
+        border: 1px solid rgba(251, 113, 133, 0.6);
+        background: rgba(190, 24, 93, 0.08);
         color: #fda4af;
       }
-      .today-card .punch-group-tools .report-btn span {
-        color: #ef4444;
+      .today-card .report-btn-icon {
+        width: 1.2rem;
+        height: 1.2rem;
+        display: inline-flex;
+      }
+      .today-card .report-btn-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .today-card .punch-group-tools .report-btn .report-btn-icon {
+        color: #fb7185;
       }
       .today-card .punch-pause-btn {
         min-height: 3.3rem;
-        font-size: 1.3rem;
+        font-size: 1.5rem;
         padding: .72rem .88rem;
       }
       .today-card .punch-pause-btn.pause {
-        border: 1px solid #f4b23d;
-        color: #f4b23d;
-        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid #fbbf24;
+        color: #fbbf24;
+        background: rgba(251, 191, 36, 0.08);
       }
       .today-card .punch-pause-btn.pause .kiosk-icon {
-        color: #f4b23d;
+        color: #fbbf24;
       }
       .today-card .punch-pause-btn.resume {
         border: 1px solid rgba(129, 140, 248, 0.55);
@@ -675,6 +687,91 @@
       }
       .today-card .kiosk-history h3 {
         margin: 0;
+        font-size: 1.2rem;
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+      }
+      .today-card .kiosk-history-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+      }
+      .today-card .kiosk-history-head a {
+        color: #94a3b8;
+        font-size: .92rem;
+      }
+      .today-card .kiosk-history-head a:hover {
+        color: #cbd5e1;
+      }
+      .today-card .history-title-icon {
+        width: 1.05rem;
+        height: 1.05rem;
+        display: inline-flex;
+        color: #8b93ff;
+      }
+      .today-card .history-title-icon svg {
+        width: 100%;
+        height: 100%;
+      }
+      .today-card .history-feed {
+        list-style: none;
+        margin: .7rem 0 0;
+        padding: 0;
+      }
+      .today-card .history-feed-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .8rem;
+        padding: .42rem 0;
+      }
+      .today-card .history-feed-left {
+        display: flex;
+        align-items: center;
+        gap: .58rem;
+      }
+      .today-card .history-feed-left strong {
+        display: block;
+        line-height: 1.05;
+      }
+      .today-card .history-feed-left span {
+        display: block;
+        font-size: .82rem;
+        color: #94a3b8;
+      }
+      .today-card .history-event-icon {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .today-card .history-event-icon svg {
+        width: .9rem;
+        height: .9rem;
+      }
+      .today-card .history-event-icon.is-in {
+        background: #22c55e;
+        color: #fff;
+      }
+      .today-card .history-event-icon.is-out {
+        background: #f43f5e;
+        color: #fff;
+      }
+      .today-card .history-feed-right {
+        text-align: right;
+      }
+      .today-card .history-feed-right strong {
+        display: block;
+        line-height: 1.05;
+      }
+      .today-card .history-feed-right span {
+        display: block;
+        font-size: .8rem;
+        color: #94a3b8;
       }
       .muted { color: var(--muted); }
       .help-icon {
@@ -1028,6 +1125,7 @@
           justify-content: flex-end;
         }
         .today-card .balance-cards {
+          grid-template-columns: 1fr;
           padding-right: 0;
         }
         .today-card .punch-group-header {
@@ -1040,6 +1138,9 @@
       }
 
       @media (min-width: 681px) {
+        .today-card .balance-cards {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
         .today-card .punch-actions {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
@@ -1050,6 +1151,12 @@
           width: 2.7rem;
           height: 2.7rem;
           font-size: 1.2rem;
+        }
+      }
+
+      @media (min-width: 981px) {
+        .today-card .balance-cards {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
         }
       }
 
