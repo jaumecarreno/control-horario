@@ -64,6 +64,11 @@ class LeaveRequestStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class LeavePolicyUnit(str, enum.Enum):
+    DAYS = "DAYS"
+    HOURS = "HOURS"
+
+
 class ExpectedHoursFrequency(str, enum.Enum):
     YEARLY = "YEARLY"
     MONTHLY = "MONTHLY"
@@ -242,6 +247,28 @@ class LeaveType(db.Model):
     counts_as_worked_bool: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class ShiftLeavePolicy(db.Model):
+    __tablename__ = "shift_leave_policies"
+    __table_args__ = (
+        Index("ix_shift_leave_policies_tenant_shift", "tenant_id", "shift_id"),
+        CheckConstraint("amount > 0", name="ck_shift_leave_policies_amount_positive"),
+        CheckConstraint("valid_to >= valid_from", name="ck_shift_leave_policies_dates"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    shift_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("shifts.id", ondelete="CASCADE"), nullable=False)
+    leave_type_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("leave_types.id", ondelete="RESTRICT"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    unit: Mapped[LeavePolicyUnit] = mapped_column(Enum(LeavePolicyUnit, name="leave_policy_unit"), nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
+
+
 class LeaveRequest(db.Model):
     __tablename__ = "leave_requests"
     __table_args__ = (Index("ix_leave_requests_tenant_status", "tenant_id", "status"),)
@@ -250,6 +277,9 @@ class LeaveRequest(db.Model):
     tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     employee_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
     type_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("leave_types.id", ondelete="CASCADE"), nullable=False)
+    leave_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("shift_leave_policies.id", ondelete="SET NULL"), nullable=True
+    )
     date_from: Mapped[date] = mapped_column(Date, nullable=False)
     date_to: Mapped[date] = mapped_column(Date, nullable=False)
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)

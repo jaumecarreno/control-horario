@@ -4,9 +4,14 @@
   <section class="card">
     <h1>Leave requests</h1>
     <p class="muted">{{ employee.name }}</p>
+    {% if active_shift %}
+      <p class="muted" style="margin-top:-.35rem;">Turno activo: {{ active_shift.name }}</p>
+    {% else %}
+      <p class="muted" style="margin-top:-.35rem;">Sin turno activo.</p>
+    {% endif %}
     <form method="post">
       {{ form.hidden_tag() }}
-      <label for="{{ form.type_id.id }}">Leave type</label>
+      <label for="{{ form.type_id.id }}">{{ form.type_id.label.text }}</label>
       {{ form.type_id() }}
       <label for="{{ form.date_from.id }}">From</label>
       {{ form.date_from() }}
@@ -14,7 +19,12 @@
       {{ form.date_to() }}
       <label for="{{ form.minutes.id }}">Minutes</label>
       {{ form.minutes() }}
-      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+      {% if available_policies %}
+        <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+      {% else %}
+        <p class="muted" style="margin-top:.75rem;">No hay vacaciones o permisos configurados para tu turno actual.</p>
+        <div style="margin-top: 1rem;">{{ form.submit(disabled=true) }}</div>
+      {% endif %}
     </form>
   </section>
 
@@ -46,4 +56,3 @@
     </table>
   </section>
 {% endblock %}
-

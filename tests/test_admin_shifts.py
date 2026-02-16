@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select, text
 
 from app.extensions import db
-from app.models import Shift
+from app.models import LeavePolicyUnit, Shift, ShiftLeavePolicy
 
 
 def _login_admin(client):
@@ -112,3 +112,64 @@ def test_admin_can_edit_shift(admin_only_client):
     assert "General revisado" in body
     assert "20" in body
     assert "Semanales" in body
+
+
+def test_admin_shift_edit_page_contains_leave_policy_section(admin_only_client):
+    _login_admin(admin_only_client)
+    create_response = admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "8",
+            "expected_hours_frequency": "DAILY",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 302
+
+    with admin_only_client.application.app_context():
+        shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        shift_id = shift.id
+
+    edit_page = admin_only_client.get(f"/admin/turnos/{shift_id}/edit", follow_redirects=False)
+    assert edit_page.status_code == 200
+    body = edit_page.get_data(as_text=True)
+    assert "Vacaciones permisos" in body
+    assert "Anadir vacaciones o permiso" in body
+
+
+def test_admin_can_create_shift_with_leave_policy(admin_only_client):
+    _login_admin(admin_only_client)
+    create_response = admin_only_client.post(
+        "/admin/turnos/new",
+        data={
+            "name": "General",
+            "break_counts_as_worked_bool": "y",
+            "break_minutes": "30",
+            "expected_hours": "8",
+            "expected_hours_frequency": "DAILY",
+            "policy_name": ["Vacaciones"],
+            "policy_amount": ["22"],
+            "policy_unit": [LeavePolicyUnit.DAYS.value],
+            "policy_valid_from": ["2026-01-01"],
+            "policy_valid_to": ["2027-01-31"],
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 302
+
+    with admin_only_client.application.app_context():
+        shift = db.session.execute(select(Shift).where(Shift.name == "General")).scalar_one()
+        rows = list(
+            db.session.execute(select(ShiftLeavePolicy).where(ShiftLeavePolicy.shift_id == shift.id))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].name == "Vacaciones"
+        assert rows[0].amount == 22
+        assert rows[0].unit == LeavePolicyUnit.DAYS
+        assert str(rows[0].valid_from) == "2026-01-01"
+        assert str(rows[0].valid_to) == "2027-01-31"

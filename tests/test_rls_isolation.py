@@ -38,6 +38,7 @@ def test_rls_blocks_cross_tenant_reads():
                     audit_log,
                     employee_shift_assignments,
                     shifts,
+                    shift_leave_policies,
                     leave_requests,
                     leave_types,
                     time_adjustments,

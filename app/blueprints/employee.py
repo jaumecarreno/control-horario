@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -19,10 +20,12 @@ from app.models import (
     Employee,
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
+    LeavePolicyUnit,
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
     Shift,
+    ShiftLeavePolicy,
     TimeEvent,
     TimeEventSource,
     TimeEventType,
@@ -50,6 +53,10 @@ SHIFT_FREQUENCY_LABELS = {
     ExpectedHoursFrequency.MONTHLY: "Mensuales",
     ExpectedHoursFrequency.WEEKLY: "Semanales",
     ExpectedHoursFrequency.DAILY: "Diarias",
+}
+LEAVE_POLICY_UNIT_LABELS = {
+    LeavePolicyUnit.DAYS: "dias",
+    LeavePolicyUnit.HOURS: "horas",
 }
 
 
@@ -188,6 +195,150 @@ def _shift_for_day(
     return None
 
 
+def _current_shift_for_employee_day(employee: Employee, current_day: date) -> Shift | None:
+    assignment_rows = _employee_shift_assignments(employee.id, current_day, current_day)
+    if assignment_rows is None:
+        return _tenant_shift(employee.tenant_id)
+    return _shift_for_day(assignment_rows, current_day)
+
+
+def _format_decimal_amount(value: Decimal) -> str:
+    value_as_float = float(value)
+    if abs(value_as_float - round(value_as_float)) < 0.000001:
+        return str(int(round(value_as_float)))
+    return f"{value_as_float:.2f}".rstrip("0").rstrip(".")
+
+
+def _leave_request_amount_for_policy(policy: ShiftLeavePolicy, leave_request: LeaveRequest) -> Decimal:
+    if policy.unit == LeavePolicyUnit.DAYS:
+        return Decimal(max(0, (leave_request.date_to - leave_request.date_from).days + 1))
+    minutes = max(0, int(leave_request.minutes or 0))
+    return Decimal(minutes) / Decimal(60)
+
+
+def _policy_consumption_by_employee(
+    employee_id: uuid.UUID,
+    policies: list[ShiftLeavePolicy],
+) -> dict[uuid.UUID, dict[str, Decimal]]:
+    totals: dict[uuid.UUID, dict[str, Decimal]] = {
+        policy.id: {"approved": Decimal("0"), "pending": Decimal("0")} for policy in policies
+    }
+    if not policies:
+        return totals
+
+    policy_by_id = {policy.id: policy for policy in policies}
+    stmt = (
+        select(LeaveRequest)
+        .where(
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.leave_policy_id.in_(list(policy_by_id.keys())),
+            LeaveRequest.status.in_([LeaveRequestStatus.REQUESTED, LeaveRequestStatus.APPROVED]),
+        )
+        .order_by(LeaveRequest.created_at.asc())
+    )
+    try:
+        rows = list(db.session.execute(stmt).scalars().all())
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Leave request policy consumption lookup failed.",
+            exc_info=True,
+        )
+        return totals
+
+    for leave_request in rows:
+        if leave_request.leave_policy_id is None:
+            continue
+        policy = policy_by_id.get(leave_request.leave_policy_id)
+        if policy is None:
+            continue
+        amount = _leave_request_amount_for_policy(policy, leave_request)
+        if leave_request.status == LeaveRequestStatus.APPROVED:
+            totals[policy.id]["approved"] += amount
+        elif leave_request.status == LeaveRequestStatus.REQUESTED:
+            totals[policy.id]["pending"] += amount
+    return totals
+
+
+def _active_leave_policies_for_shift(shift: Shift | None, current_day: date) -> list[ShiftLeavePolicy]:
+    if shift is None:
+        return []
+
+    stmt = (
+        select(ShiftLeavePolicy)
+        .where(
+            ShiftLeavePolicy.tenant_id == shift.tenant_id,
+            ShiftLeavePolicy.shift_id == shift.id,
+            ShiftLeavePolicy.valid_from <= current_day,
+            ShiftLeavePolicy.valid_to >= current_day,
+        )
+        .order_by(ShiftLeavePolicy.name.asc(), ShiftLeavePolicy.created_at.asc())
+    )
+    try:
+        return list(db.session.execute(stmt).scalars().all())
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Shift leave policies lookup failed.",
+            exc_info=True,
+        )
+        return []
+
+
+def _leave_policy_balances(employee: Employee, shift: Shift | None, current_day: date) -> list[dict[str, str | float]]:
+    policies = _active_leave_policies_for_shift(shift, current_day)
+    if not policies:
+        return []
+
+    consumption_by_policy = _policy_consumption_by_employee(employee.id, policies)
+    balances: list[dict[str, str | float]] = []
+    for policy in policies:
+        totals = consumption_by_policy.get(policy.id, {"approved": Decimal("0"), "pending": Decimal("0")})
+        approved = totals["approved"]
+        pending = totals["pending"]
+        used = approved + pending
+        total_amount = Decimal(policy.amount)
+        remaining = total_amount - used
+        if remaining < 0:
+            remaining = Decimal("0")
+
+        remaining_percent = 0.0
+        if total_amount > 0:
+            remaining_percent = float((remaining / total_amount) * Decimal("100"))
+            if remaining_percent < 0:
+                remaining_percent = 0.0
+            if remaining_percent > 100:
+                remaining_percent = 100.0
+
+        balances.append(
+            {
+                "name": policy.name,
+                "total_display": _format_decimal_amount(total_amount),
+                "used_display": _format_decimal_amount(used),
+                "pending_display": _format_decimal_amount(pending),
+                "remaining_display": _format_decimal_amount(remaining),
+                "unit_label": LEAVE_POLICY_UNIT_LABELS.get(policy.unit, "dias"),
+                "remaining_percent": remaining_percent,
+            }
+        )
+
+    return balances
+
+
+def _requested_amount_for_policy(
+    policy: ShiftLeavePolicy,
+    requested_from: date,
+    requested_to: date,
+    requested_minutes: int | None,
+) -> tuple[Decimal | None, str | None]:
+    if policy.unit == LeavePolicyUnit.DAYS:
+        return Decimal(max(0, (requested_to - requested_from).days + 1)), None
+
+    if requested_minutes is None or requested_minutes <= 0:
+        return None, "Para permisos en horas debes indicar minutos mayores que cero."
+    return Decimal(requested_minutes) / Decimal(60), None
+
+
 def _business_days_in_month(year: int, month: int) -> int:
     return sum(1 for day in range(1, monthrange(year, month)[1] + 1) if date(year, month, day).weekday() < 5)
 
@@ -324,6 +475,9 @@ def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
     pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
+    today_local = datetime.now(_app_timezone()).date()
+    active_shift = _current_shift_for_employee_day(employee, today_local)
+    leave_policy_balances = _leave_policy_balances(employee, active_shift, today_local)
     return render_template(
         "employee/_punch_state.html",
         employee=employee,
@@ -335,6 +489,7 @@ def _render_punch_state(employee: Employee):
         pause_active=pause_active,
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
+        leave_policy_balances=leave_policy_balances,
     )
 
 
@@ -346,6 +501,9 @@ def me_today():
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
     pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
+    today_local = datetime.now(_app_timezone()).date()
+    active_shift = _current_shift_for_employee_day(employee, today_local)
+    leave_policy_balances = _leave_policy_balances(employee, active_shift, today_local)
     return render_template(
         "employee/today.html",
         employee=employee,
@@ -357,6 +515,7 @@ def me_today():
         pause_active=pause_active,
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
+        leave_policy_balances=leave_policy_balances,
     )
 
 
@@ -705,45 +864,81 @@ def pause_control():
 def me_leaves():
     employee = _employee_for_current_user()
     form = LeaveRequestForm()
+    form.type_id.label.text = "Vacacion / permiso"
 
-    leave_types = list(
-        db.session.execute(select(LeaveType).where(LeaveType.tenant_id == employee.tenant_id).order_by(LeaveType.name.asc()))
-        .scalars()
-        .all()
-    )
-    form.type_id.choices = [(str(item.id), f"{item.code} - {item.name}") for item in leave_types]
-    leave_type_ids = {str(item.id): item for item in leave_types}
-
-    if form.validate_on_submit():
-        selected_type = leave_type_ids.get(form.type_id.data)
-        if selected_type is None:
-            abort(400, description="Invalid leave type.")
-
-        leave_request = LeaveRequest(
-            tenant_id=employee.tenant_id,
-            employee_id=employee.id,
-            type_id=selected_type.id,
-            date_from=form.date_from.data,
-            date_to=form.date_to.data,
-            minutes=form.minutes.data,
-            status=LeaveRequestStatus.REQUESTED,
+    today_local = datetime.now(_app_timezone()).date()
+    active_shift = _current_shift_for_employee_day(employee, today_local)
+    available_policies = _active_leave_policies_for_shift(active_shift, today_local)
+    policy_by_id = {str(policy.id): policy for policy in available_policies}
+    form.type_id.choices = [
+        (
+            str(policy.id),
+            (
+                f"{policy.name} - {_format_decimal_amount(Decimal(policy.amount))} "
+                f"{LEAVE_POLICY_UNIT_LABELS.get(policy.unit, 'dias')} "
+                f"({policy.valid_from.isoformat()} a {policy.valid_to.isoformat()})"
+            ),
         )
-        db.session.add(leave_request)
-        db.session.flush()
-        log_audit(
-            action="LEAVE_REQUESTED",
-            entity_type="leave_requests",
-            entity_id=leave_request.id,
-            payload={
-                "employee_id": str(employee.id),
-                "type_id": str(selected_type.id),
-                "date_from": form.date_from.data.isoformat(),
-                "date_to": form.date_to.data.isoformat(),
-            },
-        )
-        db.session.commit()
-        flash("Leave request submitted.", "success")
-        return redirect(url_for("employee.me_leaves"))
+        for policy in available_policies
+    ]
+
+    if request.method == "POST" and not available_policies:
+        flash("No hay vacaciones o permisos definidos para tu turno actual.", "warning")
+    elif form.validate_on_submit():
+        selected_policy = policy_by_id.get(form.type_id.data)
+        if selected_policy is None:
+            flash("Vacacion o permiso invalido para tu turno actual.", "danger")
+        else:
+            requested_from = form.date_from.data
+            requested_to = form.date_to.data
+            if requested_from < selected_policy.valid_from or requested_to > selected_policy.valid_to:
+                flash("Las fechas solicitadas estan fuera del rango permitido para esta bolsa.", "danger")
+            else:
+                requested_amount, amount_error = _requested_amount_for_policy(
+                    selected_policy,
+                    requested_from,
+                    requested_to,
+                    form.minutes.data,
+                )
+                if amount_error is not None or requested_amount is None:
+                    flash(amount_error or "Importe solicitado invalido.", "danger")
+                else:
+                    consumption = _policy_consumption_by_employee(employee.id, [selected_policy])
+                    totals = consumption.get(selected_policy.id, {"approved": Decimal("0"), "pending": Decimal("0")})
+                    used = totals["approved"] + totals["pending"]
+                    total_amount = Decimal(selected_policy.amount)
+                    if used + requested_amount > total_amount + Decimal("0.000001"):
+                        flash("No hay saldo suficiente en esta bolsa para esa solicitud.", "danger")
+                    else:
+                        leave_request = LeaveRequest(
+                            tenant_id=employee.tenant_id,
+                            employee_id=employee.id,
+                            type_id=selected_policy.leave_type_id,
+                            leave_policy_id=selected_policy.id,
+                            date_from=requested_from,
+                            date_to=requested_to,
+                            minutes=form.minutes.data if selected_policy.unit == LeavePolicyUnit.HOURS else None,
+                            status=LeaveRequestStatus.REQUESTED,
+                        )
+                        db.session.add(leave_request)
+                        db.session.flush()
+                        log_audit(
+                            action="LEAVE_REQUESTED",
+                            entity_type="leave_requests",
+                            entity_id=leave_request.id,
+                            payload={
+                                "employee_id": str(employee.id),
+                                "type_id": str(selected_policy.leave_type_id),
+                                "leave_policy_id": str(selected_policy.id),
+                                "leave_policy_name": selected_policy.name,
+                                "date_from": requested_from.isoformat(),
+                                "date_to": requested_to.isoformat(),
+                                "minutes": leave_request.minutes,
+                            },
+                        )
+                        db.session.commit()
+                        flash("Leave request submitted.", "success")
+                        return redirect(url_for("employee.me_leaves"))
 
     history_stmt = (
         select(LeaveRequest, LeaveType)
@@ -752,4 +947,11 @@ def me_leaves():
         .order_by(LeaveRequest.created_at.desc())
     )
     requests_rows = db.session.execute(history_stmt).all()
-    return render_template("employee/leaves.html", form=form, rows=requests_rows, employee=employee)
+    return render_template(
+        "employee/leaves.html",
+        form=form,
+        rows=requests_rows,
+        employee=employee,
+        active_shift=active_shift,
+        available_policies=available_policies,
+    )

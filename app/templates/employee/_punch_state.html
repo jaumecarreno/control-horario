@@ -1,30 +1,28 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
   <div class="kiosk-toolbar">
     <div class="balance-cards" aria-label="Saldos">
-      <article class="balance-card vacations">
-        <div class="balance-card-top">
-          <h3>Vacaciones</h3>
-          <span class="balance-card-total">22 totales</span>
-        </div>
-        <p class="balance-card-number">14 <span>dias restantes</span></p>
-        <div class="balance-meter"><span style="width:64%"></span></div>
-      </article>
-      <article class="balance-card personal-days">
-        <div class="balance-card-top">
-          <h3>Asuntos propios</h3>
-          <span class="balance-card-total">3 totales</span>
-        </div>
-        <p class="balance-card-number">2 <span>dias restantes</span></p>
-        <div class="balance-meter"><span style="width:67%"></span></div>
-      </article>
-      <article class="balance-card extra-days">
-        <div class="balance-card-top">
-          <h3>Dias adicionales</h3>
-          <span class="balance-card-total">8 totales</span>
-        </div>
-        <p class="balance-card-number">6 <span>dias restantes</span></p>
-        <div class="balance-meter"><span style="width:75%"></span></div>
-      </article>
+      {% if leave_policy_balances %}
+        {% for balance in leave_policy_balances %}
+          <article class="balance-card {% if loop.index0 % 3 == 1 %}personal-days{% elif loop.index0 % 3 == 2 %}extra-days{% else %}vacations{% endif %}">
+            <div class="balance-card-top">
+              <h3>{{ balance.name }}</h3>
+              <span class="balance-card-total">{{ balance.total_display }} totales</span>
+            </div>
+            <p class="balance-card-number">{{ balance.remaining_display }} <span>{{ balance.unit_label }} restantes</span></p>
+            <div class="balance-meter"><span style="width:{{ '%.2f'|format(balance.remaining_percent) }}%"></span></div>
+            <p class="muted" style="margin:.5rem 0 0;">Usado {{ balance.used_display }} (pendiente {{ balance.pending_display }})</p>
+          </article>
+        {% endfor %}
+      {% else %}
+        <article class="balance-card vacations">
+          <div class="balance-card-top">
+            <h3>Vacaciones permisos</h3>
+            <span class="balance-card-total">Sin configurar</span>
+          </div>
+          <p class="balance-card-number">0 <span>sin bolsas activas</span></p>
+          <div class="balance-meter"><span style="width:0%"></span></div>
+        </article>
+      {% endif %}
     </div>
 
     <div class="theme-toggle" aria-label="Cambiar tema">

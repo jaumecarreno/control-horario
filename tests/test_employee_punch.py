@@ -10,7 +10,12 @@ from app.models import (
     Employee,
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
+    LeavePolicyUnit,
+    LeaveRequest,
+    LeaveRequestStatus,
+    LeaveType,
     Shift,
+    ShiftLeavePolicy,
     Tenant,
     TimeEvent,
     TimeEventSource,
@@ -223,4 +228,103 @@ def test_presence_control_uses_employee_shift_history_for_expected_hours(client,
     html = page.get_data(as_text=True)
     assert "Esperado 115:00" in html
     assert "Balance -115:00" in html
+
+
+def test_me_today_handles_missing_shift_leave_policies(client):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    page = client.get("/me/today")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Vacaciones permisos" in html
+    assert "sin bolsas activas" in html
+
+
+def test_me_today_shows_shift_leave_policy_balance(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+
+        shift = Shift(
+            tenant_id=tenant_id,
+            name="General",
+            break_counts_as_worked_bool=True,
+            break_minutes=30,
+            expected_hours=Decimal("7.50"),
+            expected_hours_frequency=ExpectedHoursFrequency.DAILY,
+        )
+        leave_type = LeaveType(
+            tenant_id=tenant_id,
+            code="VACACIONES",
+            name="Vacaciones",
+            paid_bool=False,
+            requires_approval_bool=True,
+            counts_as_worked_bool=False,
+        )
+        db.session.add_all([shift, leave_type])
+        db.session.flush()
+        db.session.add(
+            EmployeeShiftAssignment(
+                tenant_id=tenant_id,
+                employee_id=employee.id,
+                shift_id=shift.id,
+                effective_from=date(2020, 1, 1),
+                effective_to=None,
+            )
+        )
+        policy = ShiftLeavePolicy(
+            tenant_id=tenant_id,
+            shift_id=shift.id,
+            leave_type_id=leave_type.id,
+            name="Vacaciones",
+            amount=Decimal("22"),
+            unit=LeavePolicyUnit.DAYS,
+            valid_from=date(2020, 1, 1),
+            valid_to=date(2030, 12, 31),
+        )
+        db.session.add(policy)
+        db.session.flush()
+        db.session.add(
+            LeaveRequest(
+                tenant_id=tenant_id,
+                employee_id=employee.id,
+                type_id=leave_type.id,
+                leave_policy_id=policy.id,
+                date_from=date(2026, 2, 1),
+                date_to=date(2026, 2, 5),
+                minutes=None,
+                status=LeaveRequestStatus.APPROVED,
+            )
+        )
+        db.session.commit()
+
+    page = client.get("/me/today")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "Vacaciones" in html
+    assert "22 totales" in html
+    assert "Usado 5" in html
+    assert "17" in html
+
+
+def test_me_leaves_does_not_crash_without_shift_leave_policies(client):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    page = client.get("/me/leaves")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "No hay vacaciones o permisos configurados para tu turno actual." in html
+
+    submit = client.post("/me/leaves", data={}, follow_redirects=True)
+    assert submit.status_code == 200
+    submit_html = submit.get_data(as_text=True)
+    assert "No hay vacaciones o permisos definidos para tu turno actual." in submit_html
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import csv
 import io
+from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
@@ -19,11 +20,13 @@ from app.models import (
     Employee,
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
+    LeavePolicyUnit,
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
     MembershipRole,
     Shift,
+    ShiftLeavePolicy,
     TimeAdjustment,
     TimeEvent,
 )
@@ -40,6 +43,14 @@ SHIFT_FREQUENCY_LABELS = {
     ExpectedHoursFrequency.WEEKLY: "Semanales",
     ExpectedHoursFrequency.DAILY: "Diarias",
 }
+LEAVE_POLICY_UNIT_LABELS = {
+    LeavePolicyUnit.DAYS: "Dias",
+    LeavePolicyUnit.HOURS: "Horas",
+}
+LEAVE_POLICY_UNIT_CHOICES = [
+    (LeavePolicyUnit.DAYS.value, LEAVE_POLICY_UNIT_LABELS[LeavePolicyUnit.DAYS]),
+    (LeavePolicyUnit.HOURS.value, LEAVE_POLICY_UNIT_LABELS[LeavePolicyUnit.HOURS]),
+]
 
 
 def _enum_value(value: object, fallback: str = "") -> str:
@@ -50,6 +61,197 @@ def _enum_value(value: object, fallback: str = "") -> str:
 
 def _tenant_shifts(tenant_id: UUID) -> list[Shift]:
     return list(db.session.execute(select(Shift).where(Shift.tenant_id == tenant_id).order_by(Shift.name.asc())).scalars().all())
+
+
+def _shift_leave_policies(shift_id: UUID) -> list[ShiftLeavePolicy]:
+    stmt = (
+        select(ShiftLeavePolicy)
+        .where(ShiftLeavePolicy.shift_id == shift_id)
+        .order_by(ShiftLeavePolicy.created_at.asc(), ShiftLeavePolicy.name.asc())
+    )
+    return list(db.session.execute(stmt).scalars().all())
+
+
+def _new_blank_policy_row() -> dict[str, str]:
+    return {"name": "", "amount": "", "unit": LeavePolicyUnit.DAYS.value, "valid_from": "", "valid_to": ""}
+
+
+def _policy_rows_from_models(rows: list[ShiftLeavePolicy]) -> list[dict[str, str]]:
+    formatted_rows: list[dict[str, str]] = []
+    for row in rows:
+        formatted_rows.append(
+            {
+                "name": row.name,
+                "amount": format(row.amount, "f"),
+                "unit": _enum_value(row.unit, fallback=LeavePolicyUnit.DAYS.value),
+                "valid_from": row.valid_from.isoformat(),
+                "valid_to": row.valid_to.isoformat(),
+            }
+        )
+    return formatted_rows
+
+
+def _parse_shift_leave_policy_rows() -> tuple[list[dict[str, object]], list[dict[str, str]], list[str]]:
+    names = request.form.getlist("policy_name")
+    amounts = request.form.getlist("policy_amount")
+    units = request.form.getlist("policy_unit")
+    valid_from_values = request.form.getlist("policy_valid_from")
+    valid_to_values = request.form.getlist("policy_valid_to")
+
+    max_rows = max(len(names), len(amounts), len(units), len(valid_from_values), len(valid_to_values), 0)
+    parsed_rows: list[dict[str, object]] = []
+    raw_rows: list[dict[str, str]] = []
+    errors: list[str] = []
+
+    for index in range(max_rows):
+        raw_name = (names[index] if index < len(names) else "").strip()
+        raw_amount = (amounts[index] if index < len(amounts) else "").strip()
+        raw_unit = (units[index] if index < len(units) else LeavePolicyUnit.DAYS.value).strip() or LeavePolicyUnit.DAYS.value
+        raw_valid_from = (valid_from_values[index] if index < len(valid_from_values) else "").strip()
+        raw_valid_to = (valid_to_values[index] if index < len(valid_to_values) else "").strip()
+        raw_row = {
+            "name": raw_name,
+            "amount": raw_amount,
+            "unit": raw_unit,
+            "valid_from": raw_valid_from,
+            "valid_to": raw_valid_to,
+        }
+        raw_rows.append(raw_row)
+
+        if not raw_name and not raw_amount and not raw_valid_from and not raw_valid_to:
+            continue
+
+        row_number = index + 1
+        if not raw_name:
+            errors.append(f"Fila {row_number}: el nombre es obligatorio.")
+            continue
+        if not raw_amount:
+            errors.append(f"Fila {row_number}: el numero de dias u horas es obligatorio.")
+            continue
+        if not raw_valid_from or not raw_valid_to:
+            errors.append(f"Fila {row_number}: inicio y fin son obligatorios.")
+            continue
+
+        try:
+            amount = Decimal(raw_amount.replace(",", "."))
+        except InvalidOperation:
+            errors.append(f"Fila {row_number}: numero de dias u horas invalido.")
+            continue
+        if amount <= 0:
+            errors.append(f"Fila {row_number}: el numero de dias u horas debe ser mayor que cero.")
+            continue
+
+        try:
+            unit = LeavePolicyUnit(raw_unit)
+        except ValueError:
+            errors.append(f"Fila {row_number}: unidad invalida.")
+            continue
+
+        try:
+            valid_from = date.fromisoformat(raw_valid_from)
+            valid_to = date.fromisoformat(raw_valid_to)
+        except ValueError:
+            errors.append(f"Fila {row_number}: fecha invalida.")
+            continue
+        if valid_to < valid_from:
+            errors.append(f"Fila {row_number}: la fecha fin no puede ser anterior al inicio.")
+            continue
+
+        parsed_rows.append(
+            {
+                "name": raw_name,
+                "amount": amount,
+                "unit": unit,
+                "valid_from": valid_from,
+                "valid_to": valid_to,
+            }
+        )
+
+    return parsed_rows, raw_rows, errors
+
+
+def _leave_type_code_base(name: str) -> str:
+    code = "".join(char for char in name.upper() if char.isalnum())
+    if not code:
+        return "PERMISO"
+    return code[:32]
+
+
+def _get_or_create_leave_type(tenant_id: UUID, policy_name: str) -> LeaveType:
+    normalized_name = policy_name.strip()
+    existing = db.session.execute(
+        select(LeaveType).where(LeaveType.tenant_id == tenant_id, func.lower(LeaveType.name) == normalized_name.lower())
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    code_base = _leave_type_code_base(normalized_name)
+    candidate = code_base
+    sequence = 1
+    while (
+        db.session.execute(select(LeaveType.id).where(LeaveType.tenant_id == tenant_id, LeaveType.code == candidate)).scalar_one_or_none()
+        is not None
+    ):
+        sequence += 1
+        suffix = f"-{sequence}"
+        candidate = f"{code_base[:32 - len(suffix)]}{suffix}"
+
+    leave_type = LeaveType(
+        tenant_id=tenant_id,
+        code=candidate,
+        name=normalized_name,
+        paid_bool=False,
+        requires_approval_bool=True,
+        counts_as_worked_bool=False,
+    )
+    db.session.add(leave_type)
+    db.session.flush()
+    return leave_type
+
+
+def _replace_shift_leave_policies(tenant_id: UUID, shift_id: UUID, rows: list[dict[str, object]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    existing_rows = _shift_leave_policies(shift_id)
+    before_payload = [
+        {
+            "name": item.name,
+            "amount": str(item.amount),
+            "unit": _enum_value(item.unit),
+            "valid_from": item.valid_from.isoformat(),
+            "valid_to": item.valid_to.isoformat(),
+            "leave_type_id": str(item.leave_type_id),
+        }
+        for item in existing_rows
+    ]
+    for item in existing_rows:
+        db.session.delete(item)
+
+    after_payload: list[dict[str, str]] = []
+    for row in rows:
+        leave_type = _get_or_create_leave_type(tenant_id, str(row["name"]))
+        policy = ShiftLeavePolicy(
+            tenant_id=tenant_id,
+            shift_id=shift_id,
+            leave_type_id=leave_type.id,
+            name=str(row["name"]),
+            amount=Decimal(row["amount"]),
+            unit=LeavePolicyUnit(row["unit"]),
+            valid_from=row["valid_from"],
+            valid_to=row["valid_to"],
+        )
+        db.session.add(policy)
+        after_payload.append(
+            {
+                "name": policy.name,
+                "amount": str(policy.amount),
+                "unit": _enum_value(policy.unit),
+                "valid_from": policy.valid_from.isoformat(),
+                "valid_to": policy.valid_to.isoformat(),
+                "leave_type_id": str(leave_type.id),
+                "leave_type_code": leave_type.code,
+            }
+        )
+
+    return before_payload, after_payload
 
 
 def _employee_assignment_rows(employee_id: UUID) -> list[tuple[EmployeeShiftAssignment, Shift | None]]:
@@ -408,6 +610,13 @@ def _render_turnos():
 @roles_required(ADMIN_ROLES)
 def shifts_new():
     form = ShiftCreateForm()
+    parsed_policy_rows: list[dict[str, object]] = []
+    raw_policy_rows: list[dict[str, str]] = []
+    policy_errors: list[str] = []
+    if request.method == "POST":
+        parsed_policy_rows, raw_policy_rows, policy_errors = _parse_shift_leave_policy_rows()
+
+    policy_rows_for_template = raw_policy_rows if raw_policy_rows else [_new_blank_policy_row()]
     if form.validate_on_submit():
         tenant_id = get_active_tenant_id()
         if tenant_id is None:
@@ -416,14 +625,33 @@ def shifts_new():
         shift_name = form.name.data.strip()
         if not shift_name:
             flash("El nombre del turno es obligatorio.", "danger")
-            return render_template("admin/shift_new.html", form=form)
+            return render_template(
+                "admin/shift_new.html",
+                form=form,
+                policy_rows=policy_rows_for_template,
+                policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+            )
+        if policy_errors:
+            for message in policy_errors:
+                flash(message, "danger")
+            return render_template(
+                "admin/shift_new.html",
+                form=form,
+                policy_rows=policy_rows_for_template,
+                policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+            )
         try:
             existing_shift = db.session.execute(
                 select(Shift).where(Shift.tenant_id == tenant_id, Shift.name == shift_name)
             ).scalar_one_or_none()
             if existing_shift is not None:
                 flash("Ya existe un turno con ese nombre.", "warning")
-                return render_template("admin/shift_new.html", form=form)
+                return render_template(
+                    "admin/shift_new.html",
+                    form=form,
+                    policy_rows=policy_rows_for_template,
+                    policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                )
 
             expected_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
             shift = Shift(
@@ -436,6 +664,7 @@ def shifts_new():
             )
             db.session.add(shift)
             db.session.flush()
+            _, saved_policies_payload = _replace_shift_leave_policies(tenant_id, shift.id, parsed_policy_rows)
             log_audit(
                 action="SHIFT_CREATED",
                 entity_type="shifts",
@@ -446,6 +675,7 @@ def shifts_new():
                     "break_minutes": shift.break_minutes,
                     "expected_hours": str(shift.expected_hours),
                     "expected_hours_frequency": shift.expected_hours_frequency.value,
+                    "leave_policies": saved_policies_payload,
                 },
             )
             db.session.commit()
@@ -458,9 +688,19 @@ def shifts_new():
                 exc_info=True,
             )
             flash("No se pudo crear el turno. Revisa migraciones pendientes (alembic upgrade head).", "danger")
-            return render_template("admin/shift_new.html", form=form)
+            return render_template(
+                "admin/shift_new.html",
+                form=form,
+                policy_rows=policy_rows_for_template,
+                policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+            )
 
-    return render_template("admin/shift_new.html", form=form)
+    return render_template(
+        "admin/shift_new.html",
+        form=form,
+        policy_rows=policy_rows_for_template,
+        policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+    )
 
 
 @bp.route("/admin/turnos/<uuid:shift_id>/edit", methods=["GET", "POST"])
@@ -490,6 +730,22 @@ def shifts_edit(shift_id: UUID):
 
     form = ShiftCreateForm()
     form.submit.label.text = "Guardar cambios"
+    parsed_policy_rows: list[dict[str, object]] = []
+    raw_policy_rows: list[dict[str, str]] = []
+    policy_errors: list[str] = []
+    existing_policy_rows: list[dict[str, str]] = []
+    if request.method == "POST":
+        parsed_policy_rows, raw_policy_rows, policy_errors = _parse_shift_leave_policy_rows()
+    else:
+        try:
+            existing_policy_rows = _policy_rows_from_models(_shift_leave_policies(shift.id))
+        except (OperationalError, ProgrammingError, LookupError):
+            db.session.rollback()
+            current_app.logger.warning(
+                "Shift leave policies lookup failed while editing shift.",
+                exc_info=True,
+            )
+            flash("No se pudieron cargar vacaciones permisos del turno. Revisa migraciones pendientes.", "warning")
 
     if request.method == "GET":
         form.name.data = shift.name
@@ -498,11 +754,33 @@ def shifts_edit(shift_id: UUID):
         form.expected_hours.data = shift.expected_hours
         form.expected_hours_frequency.data = _enum_value(shift.expected_hours_frequency, fallback="DAILY")
 
+    policy_rows_for_template = (
+        raw_policy_rows
+        if request.method == "POST" and raw_policy_rows
+        else existing_policy_rows if existing_policy_rows else [_new_blank_policy_row()]
+    )
+
     if form.validate_on_submit():
         shift_name = form.name.data.strip()
         if not shift_name:
             flash("El nombre del turno es obligatorio.", "danger")
-            return render_template("admin/shift_edit.html", form=form, shift=shift)
+            return render_template(
+                "admin/shift_edit.html",
+                form=form,
+                shift=shift,
+                policy_rows=policy_rows_for_template,
+                policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+            )
+        if policy_errors:
+            for message in policy_errors:
+                flash(message, "danger")
+            return render_template(
+                "admin/shift_edit.html",
+                form=form,
+                shift=shift,
+                policy_rows=policy_rows_for_template,
+                policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+            )
 
         try:
             existing_shift = db.session.execute(
@@ -514,7 +792,13 @@ def shifts_edit(shift_id: UUID):
             ).scalar_one_or_none()
             if existing_shift is not None:
                 flash("Ya existe un turno con ese nombre.", "warning")
-                return render_template("admin/shift_edit.html", form=form, shift=shift)
+                return render_template(
+                    "admin/shift_edit.html",
+                    form=form,
+                    shift=shift,
+                    policy_rows=policy_rows_for_template,
+                    policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                )
 
             previous_payload = {
                 "name": shift.name,
@@ -529,6 +813,7 @@ def shifts_edit(shift_id: UUID):
             shift.break_minutes = int(form.break_minutes.data)
             shift.expected_hours = form.expected_hours.data
             shift.expected_hours_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
+            before_policy_payload, after_policy_payload = _replace_shift_leave_policies(tenant_id, shift.id, parsed_policy_rows)
             db.session.flush()
             log_audit(
                 action="SHIFT_UPDATED",
@@ -543,6 +828,10 @@ def shifts_edit(shift_id: UUID):
                         "expected_hours": str(shift.expected_hours),
                         "expected_hours_frequency": shift.expected_hours_frequency.value,
                     },
+                    "leave_policies": {
+                        "before": before_policy_payload,
+                        "after": after_policy_payload,
+                    },
                 },
             )
             db.session.commit()
@@ -556,7 +845,13 @@ def shifts_edit(shift_id: UUID):
             )
             flash("No se pudo actualizar el turno. Revisa migraciones pendientes (alembic upgrade head).", "danger")
 
-    return render_template("admin/shift_edit.html", form=form, shift=shift)
+    return render_template(
+        "admin/shift_edit.html",
+        form=form,
+        shift=shift,
+        policy_rows=policy_rows_for_template,
+        policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+    )
 
 
 @bp.get("/admin/approvals")

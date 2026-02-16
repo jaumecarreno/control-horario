@@ -36,7 +36,88 @@
         {{ form.expected_hours_frequency() }}
       </div>
 
+      <h2 style="margin: 1rem 0 .35rem;">Vacaciones permisos</h2>
+      <p class="muted" style="margin-top:0;">
+        Define bolsas que podran solicitar los empleados cuando tengan este turno asignado.
+      </p>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Numero</th>
+              <th>Unidad</th>
+              <th>Inicio</th>
+              <th>Fin</th>
+              <th>Accion</th>
+            </tr>
+          </thead>
+          <tbody id="leave-policy-rows">
+            {% for row in policy_rows %}
+              <tr>
+                <td><input type="text" name="policy_name" value="{{ row.name }}" placeholder="Vacaciones"></td>
+                <td><input type="number" name="policy_amount" value="{{ row.amount }}" min="0" step="0.25" placeholder="22"></td>
+                <td>
+                  <select name="policy_unit">
+                    {% for unit_value, unit_label in policy_unit_choices %}
+                      <option value="{{ unit_value }}" {% if row.unit == unit_value %}selected{% endif %}>{{ unit_label }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input type="date" name="policy_valid_from" value="{{ row.valid_from }}"></td>
+                <td><input type="date" name="policy_valid_to" value="{{ row.valid_to }}"></td>
+                <td><button type="button" class="secondary remove-policy-row">Eliminar</button></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <button type="button" id="add-policy-row" class="secondary" style="margin-top:.55rem;">Anadir vacaciones o permiso</button>
+
+      <template id="leave-policy-template">
+        <tr>
+          <td><input type="text" name="policy_name" placeholder="Vacaciones"></td>
+          <td><input type="number" name="policy_amount" min="0" step="0.25" placeholder="22"></td>
+          <td>
+            <select name="policy_unit">
+              {% for unit_value, unit_label in policy_unit_choices %}
+                <option value="{{ unit_value }}">{{ unit_label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input type="date" name="policy_valid_from"></td>
+          <td><input type="date" name="policy_valid_to"></td>
+          <td><button type="button" class="secondary remove-policy-row">Eliminar</button></td>
+        </tr>
+      </template>
+
       <div style="margin-top: 1rem;">{{ form.submit() }}</div>
     </form>
   </section>
+
+  <script>
+    (function () {
+      var rowsContainer = document.getElementById("leave-policy-rows");
+      var addButton = document.getElementById("add-policy-row");
+      var rowTemplate = document.getElementById("leave-policy-template");
+      if (!rowsContainer || !addButton || !rowTemplate) {
+        return;
+      }
+
+      addButton.addEventListener("click", function () {
+        rowsContainer.insertAdjacentHTML("beforeend", rowTemplate.innerHTML.trim());
+      });
+
+      rowsContainer.addEventListener("click", function (event) {
+        var button = event.target;
+        if (!(button instanceof HTMLElement) || !button.classList.contains("remove-policy-row")) {
+          return;
+        }
+        var row = button.closest("tr");
+        if (row) {
+          row.remove();
+        }
+      });
+    })();
+  </script>
 {% endblock %}
