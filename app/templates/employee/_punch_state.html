@@ -1,36 +1,20 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
-  <div class="kiosk-toolbar">
-    <div class="balance-cards" aria-label="Saldos">
-      {% if leave_policy_balances %}
-        {% for balance in leave_policy_balances %}
-          <article class="balance-card {% if loop.index0 % 3 == 1 %}personal-days{% elif loop.index0 % 3 == 2 %}extra-days{% else %}vacations{% endif %}">
-            <div class="balance-card-top">
-              <h3>{{ balance.name }}</h3>
-              <span class="balance-card-total">{{ balance.total_display }} totales</span>
-            </div>
-            <p class="balance-card-number">{{ balance.remaining_display }} <span>{{ balance.unit_label }} restantes</span></p>
-            <div class="balance-meter"><span style="width:{{ '%.2f'|format(balance.remaining_percent) }}%"></span></div>
-            <p class="muted" style="margin:.5rem 0 0;">Usado {{ balance.used_display }} (pendiente {{ balance.pending_display }})</p>
-          </article>
-        {% endfor %}
-      {% else %}
-        <article class="balance-card vacations">
-          <div class="balance-card-top">
-            <h3>Vacaciones permisos</h3>
-            <span class="balance-card-total">Sin configurar</span>
-          </div>
-          <p class="balance-card-number">0 <span>sin bolsas activas</span></p>
-          <div class="balance-meter"><span style="width:0%"></span></div>
-        </article>
-      {% endif %}
+  <article class="work-balance-card" aria-label="Resumen de balance">
+    <div class="work-balance-top">
+      <h3>Balance de horas</h3>
+      <span class="work-balance-pill">Mes actual</span>
     </div>
-
-    <div class="theme-toggle" aria-label="Cambiar tema">
-      <button type="button" class="theme-btn" id="theme-toggle-btn" title="Cambiar tema" aria-label="Cambiar tema">
-        <span id="theme-toggle-icon" aria-hidden="true"></span>
-      </button>
+    <div class="work-balance-grid">
+      <div class="work-balance-item">
+        <p class="muted">Balance total</p>
+        <strong>{{ work_balance_summary.total_display }}</strong>
+      </div>
+      <div class="work-balance-item">
+        <p class="muted">Ultimo dia{% if work_balance_summary.last_day_label != 'Sin fichajes' %} ({{ work_balance_summary.last_day_label }}){% endif %}</p>
+        <strong>{{ work_balance_summary.last_day_display }}</strong>
+      </div>
     </div>
-  </div>
+  </article>
 
   <div class="punch-group">
     {% set is_outside = current_state != 'ENTRADA' %}
@@ -124,6 +108,39 @@
         <p>Tiempo en Pausa: <strong id="pause-live-time">{{ running_pause_time }}</strong></p>
       {% endif %}
       <p>Pausas hoy: <strong>{{ paused_today }}</strong></p>
+    </div>
+  </div>
+
+  <div class="kiosk-toolbar">
+    <div class="balance-cards" aria-label="Saldos">
+      {% if leave_policy_balances %}
+        {% for balance in leave_policy_balances %}
+          <article class="balance-card {% if loop.index0 % 3 == 1 %}personal-days{% elif loop.index0 % 3 == 2 %}extra-days{% else %}vacations{% endif %}">
+            <div class="balance-card-top">
+              <h3>{{ balance.name }}</h3>
+              <span class="balance-card-total">{{ balance.total_display }} totales</span>
+            </div>
+            <p class="balance-card-number">{{ balance.remaining_display }} <span>{{ balance.unit_label }} restantes</span></p>
+            <div class="balance-meter"><span style="width:{{ '%.2f'|format(balance.remaining_percent) }}%"></span></div>
+            <p class="muted" style="margin:.5rem 0 0;">Usado {{ balance.used_display }} (pendiente {{ balance.pending_display }})</p>
+          </article>
+        {% endfor %}
+      {% else %}
+        <article class="balance-card vacations">
+          <div class="balance-card-top">
+            <h3>Vacaciones permisos</h3>
+            <span class="balance-card-total">Sin configurar</span>
+          </div>
+          <p class="balance-card-number">0 <span>sin bolsas activas</span></p>
+          <div class="balance-meter"><span style="width:0%"></span></div>
+        </article>
+      {% endif %}
+    </div>
+
+    <div class="theme-toggle" aria-label="Cambiar tema">
+      <button type="button" class="theme-btn" id="theme-toggle-btn" title="Cambiar tema" aria-label="Cambiar tema">
+        <span id="theme-toggle-icon" aria-hidden="true"></span>
+      </button>
     </div>
   </div>
 

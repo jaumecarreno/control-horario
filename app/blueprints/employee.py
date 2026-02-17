@@ -325,6 +325,66 @@ def _leave_policy_balances(employee: Employee, shift: Shift | None, current_day:
     return balances
 
 
+def _work_balance_summary(employee: Employee, current_day: date) -> dict[str, str]:
+    month_start_utc, _ = _month_bounds_utc(current_day.year, current_day.month)
+    day_end_utc = datetime.combine(current_day, time.max, tzinfo=_app_timezone()).astimezone(timezone.utc)
+    month_events_stmt = (
+        select(TimeEvent)
+        .where(
+            TimeEvent.employee_id == employee.id,
+            TimeEvent.ts >= month_start_utc,
+            TimeEvent.ts <= day_end_utc,
+        )
+        .order_by(TimeEvent.ts.asc())
+    )
+    month_events = list(db.session.execute(month_events_stmt).scalars().all())
+    events_by_day: dict[date, list[TimeEvent]] = {}
+    for event in month_events:
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
+
+    month_start_day = date(current_day.year, current_day.month, 1)
+    assignment_rows = _employee_shift_assignments(employee.id, month_start_day, current_day)
+    fallback_shift: Shift | None = None
+    if assignment_rows is None:
+        assignment_rows = []
+        fallback_shift = _tenant_shift(employee.tenant_id)
+
+    business_days_in_month = _business_days_in_month(current_day.year, current_day.month)
+    business_days_in_year = _business_days_in_year(current_day.year)
+    total_balance_minutes = 0
+    last_day_balance_minutes = 0
+    last_day_label = "Sin fichajes"
+
+    for day_index in range(current_day.day):
+        row_day = date(current_day.year, current_day.month, day_index + 1)
+        row_events = events_by_day.get(row_day, [])
+        day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, row_day)
+        worked_minutes, _, _ = _daily_worked_minutes(row_events)
+        paused_minutes, _ = _daily_pause_minutes(row_events)
+        if day_shift is not None and not day_shift.break_counts_as_worked_bool:
+            worked_minutes = max(0, worked_minutes - paused_minutes)
+        expected_minutes = _expected_work_minutes_for_day(
+            day_shift,
+            row_day,
+            business_days_in_month,
+            business_days_in_year,
+        )
+
+        day_balance = worked_minutes - expected_minutes
+        total_balance_minutes += day_balance
+
+        has_work_events = any(event.type in {TimeEventType.IN, TimeEventType.OUT} for event in row_events)
+        if has_work_events:
+            last_day_balance_minutes = day_balance
+            last_day_label = row_day.strftime("%d/%m")
+
+    return {
+        "total_display": _minutes_to_hhmm(total_balance_minutes),
+        "last_day_display": _minutes_to_hhmm(last_day_balance_minutes),
+        "last_day_label": last_day_label,
+    }
+
+
 def _requested_amount_for_policy(
     policy: ShiftLeavePolicy,
     requested_from: date,
@@ -478,6 +538,7 @@ def _render_punch_state(employee: Employee):
     today_local = datetime.now(_app_timezone()).date()
     active_shift = _current_shift_for_employee_day(employee, today_local)
     leave_policy_balances = _leave_policy_balances(employee, active_shift, today_local)
+    work_balance_summary = _work_balance_summary(employee, today_local)
     return render_template(
         "employee/_punch_state.html",
         employee=employee,
@@ -490,6 +551,7 @@ def _render_punch_state(employee: Employee):
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
         leave_policy_balances=leave_policy_balances,
+        work_balance_summary=work_balance_summary,
     )
 
 
@@ -504,6 +566,7 @@ def me_today():
     today_local = datetime.now(_app_timezone()).date()
     active_shift = _current_shift_for_employee_day(employee, today_local)
     leave_policy_balances = _leave_policy_balances(employee, active_shift, today_local)
+    work_balance_summary = _work_balance_summary(employee, today_local)
     return render_template(
         "employee/today.html",
         employee=employee,
@@ -516,6 +579,7 @@ def me_today():
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
         leave_policy_balances=leave_policy_balances,
+        work_balance_summary=work_balance_summary,
     )
 
 
