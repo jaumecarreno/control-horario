@@ -127,7 +127,7 @@ def test_pause_toggle_creates_break_events_and_updates_today_state(client):
     assert _event_count() == 1
 
     page_with_running_pause = pause_start.get_data(as_text=True)
-    assert "Reanudar" in page_with_running_pause
+    assert "Finalizar pausa" in page_with_running_pause
     assert "Tiempo en Pausa:" in page_with_running_pause
 
     pause_end = client.post("/me/pause/toggle", headers={"HX-Request": "true"})
@@ -135,7 +135,7 @@ def test_pause_toggle_creates_break_events_and_updates_today_state(client):
     assert _event_count() == 2
 
     html_after_resume = pause_end.get_data(as_text=True)
-    assert "Registrar PAUSA" in html_after_resume
+    assert "Iniciar pausa" in html_after_resume
     assert "Pausas hoy:" in html_after_resume
 
     event_types = list(db.session.execute(select(TimeEvent.type).order_by(TimeEvent.ts.asc())).scalars().all())
