@@ -923,10 +923,11 @@ def pause_control():
         day_events = events_by_day.get(current_day, [])
         is_open_day = (selected_year, selected_month) == (today_local.year, today_local.month) and current_day >= today_local
         if is_open_day:
+            _, pause_pairs = _daily_pause_minutes(day_events)
             month_rows.append(
                 {
                     "day": current_day,
-                    "pairs": _daily_punch_markers(day_events),
+                    "pairs": pause_pairs,
                     "paused": None,
                     "expected": None,
                     "balance": None,

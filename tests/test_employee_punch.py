@@ -309,6 +309,47 @@ def test_pause_control_shows_current_and_future_days_without_balance_values(clie
     )
 
 
+def test_pause_control_current_day_ignores_in_out_markers(client, app, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
+
+    with app.app_context():
+        employee_id = db.session.execute(select(Employee.id).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+        db.session.add_all(
+            [
+                TimeEvent(
+                    tenant_id=tenant_id,
+                    employee_id=employee_id,
+                    type=TimeEventType.IN,
+                    source=TimeEventSource.WEB,
+                    ts=datetime(2026, 2, 17, 8, 26, tzinfo=timezone.utc),
+                ),
+                TimeEvent(
+                    tenant_id=tenant_id,
+                    employee_id=employee_id,
+                    type=TimeEventType.OUT,
+                    source=TimeEventSource.WEB,
+                    ts=datetime(2026, 2, 17, 10, 50, tzinfo=timezone.utc),
+                ),
+            ]
+        )
+        db.session.commit()
+
+    page = client.get("/me/pause-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert re.search(
+        r"<tr>\s*<td>17/02/2026</td>\s*<td>\s*-\s*</td>\s*<td>-</td>\s*<td>-</td>\s*<td>-</td>\s*</tr>",
+        html,
+        re.DOTALL,
+    )
+    assert "Entrada " not in html
+    assert "Salida " not in html
+
+
 def test_presence_control_redirects_future_month_to_current_month(client, monkeypatch):
     response = _login(client)
     assert response.status_code == 302
