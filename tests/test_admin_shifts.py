@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select, text
 
 from app.extensions import db
@@ -138,6 +140,19 @@ def test_admin_shift_edit_page_contains_leave_policy_section(admin_only_client):
     body = edit_page.get_data(as_text=True)
     assert "Vacaciones permisos" in body
     assert "Anadir vacaciones o permiso" in body
+    assert f'value="{date.today().year}-01-01"' in body
+    assert f'value="{date.today().year}-12-21"' in body
+
+
+def test_admin_shift_new_page_prefills_default_leave_policy_dates(admin_only_client):
+    _login_admin(admin_only_client)
+
+    page = admin_only_client.get("/admin/turnos/new", follow_redirects=False)
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+
+    assert f'value="{date.today().year}-01-01"' in body
+    assert f'value="{date.today().year}-12-21"' in body
 
 
 def test_admin_can_create_shift_with_leave_policy(admin_only_client):

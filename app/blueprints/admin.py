@@ -53,6 +53,11 @@ LEAVE_POLICY_UNIT_CHOICES = [
 ]
 
 
+def _policy_default_dates(reference_day: date | None = None) -> tuple[str, str]:
+    current = reference_day or date.today()
+    return date(current.year, 1, 1).isoformat(), date(current.year, 12, 21).isoformat()
+
+
 def _enum_value(value: object, fallback: str = "") -> str:
     if value is None:
         return fallback
@@ -73,7 +78,14 @@ def _shift_leave_policies(shift_id: UUID) -> list[ShiftLeavePolicy]:
 
 
 def _new_blank_policy_row() -> dict[str, str]:
-    return {"name": "", "amount": "", "unit": LeavePolicyUnit.DAYS.value, "valid_from": "", "valid_to": ""}
+    default_valid_from, default_valid_to = _policy_default_dates()
+    return {
+        "name": "",
+        "amount": "",
+        "unit": LeavePolicyUnit.DAYS.value,
+        "valid_from": default_valid_from,
+        "valid_to": default_valid_to,
+    }
 
 
 def _policy_rows_from_models(rows: list[ShiftLeavePolicy]) -> list[dict[str, str]]:
@@ -610,6 +622,7 @@ def _render_turnos():
 @roles_required(ADMIN_ROLES)
 def shifts_new():
     form = ShiftCreateForm()
+    policy_default_valid_from, policy_default_valid_to = _policy_default_dates()
     parsed_policy_rows: list[dict[str, object]] = []
     raw_policy_rows: list[dict[str, str]] = []
     policy_errors: list[str] = []
@@ -630,6 +643,8 @@ def shifts_new():
                 form=form,
                 policy_rows=policy_rows_for_template,
                 policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                policy_default_valid_from=policy_default_valid_from,
+                policy_default_valid_to=policy_default_valid_to,
             )
         if policy_errors:
             for message in policy_errors:
@@ -639,6 +654,8 @@ def shifts_new():
                 form=form,
                 policy_rows=policy_rows_for_template,
                 policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                policy_default_valid_from=policy_default_valid_from,
+                policy_default_valid_to=policy_default_valid_to,
             )
         try:
             existing_shift = db.session.execute(
@@ -651,6 +668,8 @@ def shifts_new():
                     form=form,
                     policy_rows=policy_rows_for_template,
                     policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                    policy_default_valid_from=policy_default_valid_from,
+                    policy_default_valid_to=policy_default_valid_to,
                 )
 
             expected_frequency = ExpectedHoursFrequency(form.expected_hours_frequency.data)
@@ -693,6 +712,8 @@ def shifts_new():
                 form=form,
                 policy_rows=policy_rows_for_template,
                 policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                policy_default_valid_from=policy_default_valid_from,
+                policy_default_valid_to=policy_default_valid_to,
             )
 
     return render_template(
@@ -700,6 +721,8 @@ def shifts_new():
         form=form,
         policy_rows=policy_rows_for_template,
         policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+        policy_default_valid_from=policy_default_valid_from,
+        policy_default_valid_to=policy_default_valid_to,
     )
 
 
@@ -711,6 +734,7 @@ def shifts_edit(shift_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
         abort(400, description="No active tenant selected.")
+    policy_default_valid_from, policy_default_valid_to = _policy_default_dates()
 
     try:
         shift = db.session.execute(
@@ -770,6 +794,8 @@ def shifts_edit(shift_id: UUID):
                 shift=shift,
                 policy_rows=policy_rows_for_template,
                 policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                policy_default_valid_from=policy_default_valid_from,
+                policy_default_valid_to=policy_default_valid_to,
             )
         if policy_errors:
             for message in policy_errors:
@@ -780,6 +806,8 @@ def shifts_edit(shift_id: UUID):
                 shift=shift,
                 policy_rows=policy_rows_for_template,
                 policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                policy_default_valid_from=policy_default_valid_from,
+                policy_default_valid_to=policy_default_valid_to,
             )
 
         try:
@@ -798,6 +826,8 @@ def shifts_edit(shift_id: UUID):
                     shift=shift,
                     policy_rows=policy_rows_for_template,
                     policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+                    policy_default_valid_from=policy_default_valid_from,
+                    policy_default_valid_to=policy_default_valid_to,
                 )
 
             previous_payload = {
@@ -851,6 +881,8 @@ def shifts_edit(shift_id: UUID):
         shift=shift,
         policy_rows=policy_rows_for_template,
         policy_unit_choices=LEAVE_POLICY_UNIT_CHOICES,
+        policy_default_valid_from=policy_default_valid_from,
+        policy_default_valid_to=policy_default_valid_to,
     )
 
 

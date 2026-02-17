@@ -85,8 +85,8 @@
               {% endfor %}
             </select>
           </td>
-          <td><input type="date" name="policy_valid_from"></td>
-          <td><input type="date" name="policy_valid_to"></td>
+          <td><input type="date" name="policy_valid_from" value="{{ policy_default_valid_from }}"></td>
+          <td><input type="date" name="policy_valid_to" value="{{ policy_default_valid_to }}"></td>
           <td><button type="button" class="secondary remove-policy-row">Eliminar</button></td>
         </tr>
       </template>
