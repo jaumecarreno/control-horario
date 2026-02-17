@@ -11,7 +11,11 @@
       <div class="month-nav">
         <a class="month-nav-btn" href="{{ url_for('employee.pause_control', month=prev_month) }}" aria-label="Mes anterior">&#9664;</a>
         <strong class="month-nav-label">{{ month_label }}</strong>
-        <a class="month-nav-btn" href="{{ url_for('employee.pause_control', month=next_month) }}" aria-label="Mes siguiente">&#9654;</a>
+        {% if can_go_next_month %}
+          <a class="month-nav-btn" href="{{ url_for('employee.pause_control', month=next_month) }}" aria-label="Mes siguiente">&#9654;</a>
+        {% else %}
+          <span class="month-nav-btn is-disabled" aria-label="Mes siguiente deshabilitado" aria-disabled="true">&#9654;</span>
+        {% endif %}
       </div>
     </div>
 
@@ -49,6 +53,10 @@
             <td>{{ minutes_to_hhmm(row.paused) }}</td>
             <td>{{ minutes_to_hhmm(row.expected) }}</td>
             <td>{{ minutes_to_hhmm(row.balance) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5">Sin dias cerrados todavia para este mes.</td>
           </tr>
         {% endfor %}
       </tbody>

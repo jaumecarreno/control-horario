@@ -418,6 +418,14 @@ tbody tr:hover td {
 .month-nav-btn:hover {
   background: var(--row-hover-bg);
 }
+.month-nav-btn.is-disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.month-nav-btn.is-disabled:hover {
+  background: var(--panel-muted);
+}
 .month-nav-label {
   min-width: 8.5rem;
   text-align: center;

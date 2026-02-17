@@ -41,6 +41,20 @@ def _event_count():
     return db.session.execute(select(func.count()).select_from(TimeEvent)).scalar_one()
 
 
+def _freeze_employee_now(monkeypatch, year: int, month: int, day: int):
+    import app.blueprints.employee as employee_blueprint
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = cls(year, month, day, 12, 0, 0)
+            if tz is not None:
+                return fixed.replace(tzinfo=tz)
+            return fixed
+
+    monkeypatch.setattr(employee_blueprint, "datetime", FrozenDateTime)
+
+
 def test_duplicate_punch_requires_confirmation(client):
     response = _login(client)
     assert response.status_code == 302
@@ -176,10 +190,11 @@ def test_presence_control_falls_back_when_shifts_table_is_missing(client, app):
     assert "Sin turno configurado. Se aplica el valor por defecto." in html
 
 
-def test_presence_control_uses_employee_shift_history_for_expected_hours(client, app):
+def test_presence_control_uses_employee_shift_history_for_expected_hours(client, app, monkeypatch):
     response = _login(client)
     assert response.status_code == 302
     _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
 
     with app.app_context():
         employee = db.session.execute(select(Employee).where(Employee.email == "employee@example.com")).scalar_one()
@@ -226,8 +241,64 @@ def test_presence_control_uses_employee_shift_history_for_expected_hours(client,
     page = client.get("/me/presence-control?month=2026-02")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
-    assert "Esperado 115:00" in html
-    assert "Balance -115:00" in html
+    assert "Esperado 79:00" in html
+    assert "Balance -79:00" in html
+
+
+def test_presence_control_hides_today_and_future_days_in_current_month(client, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
+
+    page = client.get("/me/presence-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "16/02/2026" in html
+    assert "17/02/2026" not in html
+    assert "18/02/2026" not in html
+    assert "Esperado 82:30" in html
+    assert 'aria-label="Mes siguiente deshabilitado"' in html
+    assert "/me/presence-control?month=2026-03" not in html
+
+
+def test_pause_control_hides_today_and_future_days_in_current_month(client, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
+
+    page = client.get("/me/pause-control?month=2026-02")
+    assert page.status_code == 200
+    html = page.get_data(as_text=True)
+    assert "16/02/2026" in html
+    assert "17/02/2026" not in html
+    assert "18/02/2026" not in html
+    assert "Esperado 05:30" in html
+    assert 'aria-label="Mes siguiente deshabilitado"' in html
+    assert "/me/pause-control?month=2026-03" not in html
+
+
+def test_presence_control_redirects_future_month_to_current_month(client, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
+
+    page = client.get("/me/presence-control?month=2026-03", follow_redirects=False)
+    assert page.status_code == 302
+    assert "/me/presence-control?month=2026-02" in page.headers["Location"]
+
+
+def test_pause_control_redirects_future_month_to_current_month(client, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 2, 17)
+
+    page = client.get("/me/pause-control?month=2026-03", follow_redirects=False)
+    assert page.status_code == 302
+    assert "/me/pause-control?month=2026-02" in page.headers["Location"]
 
 
 def test_me_today_handles_missing_shift_leave_policies(client):

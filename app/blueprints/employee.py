@@ -727,18 +727,20 @@ def create_manual_punch():
 def presence_control():
     employee = _employee_for_current_user()
     requested_month = request.args.get("month")
+    today_local = datetime.now(_app_timezone()).date()
 
     if requested_month:
         try:
             selected_year, selected_month = map(int, requested_month.split("-", 1))
         except ValueError:
-            now = datetime.now(_app_timezone())
-            selected_year = now.year
-            selected_month = now.month
+            selected_year = today_local.year
+            selected_month = today_local.month
     else:
-        now = datetime.now(_app_timezone())
-        selected_year = now.year
-        selected_month = now.month
+        selected_year = today_local.year
+        selected_month = today_local.month
+
+    if (selected_year, selected_month) > (today_local.year, today_local.month):
+        return redirect(url_for("employee.presence_control", month=f"{today_local.year:04d}-{today_local.month:02d}"))
 
     month_start, month_end = _month_bounds_utc(selected_year, selected_month)
     month_events_stmt = (
@@ -760,7 +762,6 @@ def presence_control():
         assignment_rows = []
         fallback_shift = _tenant_shift(employee.tenant_id)
 
-    today_local = datetime.now(_app_timezone()).date()
     if fallback_shift is not None:
         active_shift = fallback_shift
     elif month_start_day <= today_local <= month_end_day:
@@ -780,8 +781,16 @@ def presence_control():
     month_rows = []
     month_worked = 0
     month_expected = 0
-    for day_index in range(days_in_month):
-        current_day = date(selected_year, selected_month, day_index + 1)
+    visible_end_day = month_end_day
+    if (selected_year, selected_month) == (today_local.year, today_local.month):
+        visible_end_day = today_local - timedelta(days=1)
+
+    visible_days = 0
+    if visible_end_day >= month_start_day:
+        visible_days = (visible_end_day - month_start_day).days + 1
+
+    for day_index in range(visible_days):
+        current_day = month_start_day + timedelta(days=day_index)
         day_events = events_by_day.get(current_day, [])
         day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
@@ -811,6 +820,7 @@ def presence_control():
     recent_events = list(db.session.execute(recent_stmt).scalars().all())
     prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
     next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+    can_go_next_month = (selected_year, selected_month) < (today_local.year, today_local.month)
 
     return render_template(
         "employee/presence_control.html",
@@ -828,6 +838,7 @@ def presence_control():
         minutes_to_hhmm=_minutes_to_hhmm,
         active_shift=active_shift,
         active_shift_frequency=active_shift_frequency,
+        can_go_next_month=can_go_next_month,
     )
 
 
@@ -837,18 +848,20 @@ def presence_control():
 def pause_control():
     employee = _employee_for_current_user()
     requested_month = request.args.get("month")
+    today_local = datetime.now(_app_timezone()).date()
 
     if requested_month:
         try:
             selected_year, selected_month = map(int, requested_month.split("-", 1))
         except ValueError:
-            now = datetime.now(_app_timezone())
-            selected_year = now.year
-            selected_month = now.month
+            selected_year = today_local.year
+            selected_month = today_local.month
     else:
-        now = datetime.now(_app_timezone())
-        selected_year = now.year
-        selected_month = now.month
+        selected_year = today_local.year
+        selected_month = today_local.month
+
+    if (selected_year, selected_month) > (today_local.year, today_local.month):
+        return redirect(url_for("employee.pause_control", month=f"{today_local.year:04d}-{today_local.month:02d}"))
 
     month_start, month_end = _month_bounds_utc(selected_year, selected_month)
     month_events_stmt = (
@@ -870,7 +883,6 @@ def pause_control():
         assignment_rows = []
         fallback_shift = _tenant_shift(employee.tenant_id)
 
-    today_local = datetime.now(_app_timezone()).date()
     if fallback_shift is not None:
         active_shift = fallback_shift
     elif month_start_day <= today_local <= month_end_day:
@@ -885,8 +897,16 @@ def pause_control():
     month_rows = []
     month_paused = 0
     month_expected = 0
-    for day_index in range(days_in_month):
-        current_day = date(selected_year, selected_month, day_index + 1)
+    visible_end_day = month_end_day
+    if (selected_year, selected_month) == (today_local.year, today_local.month):
+        visible_end_day = today_local - timedelta(days=1)
+
+    visible_days = 0
+    if visible_end_day >= month_start_day:
+        visible_days = (visible_end_day - month_start_day).days + 1
+
+    for day_index in range(visible_days):
+        current_day = month_start_day + timedelta(days=day_index)
         day_events = events_by_day.get(current_day, [])
         day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         paused_minutes, day_pairs = _daily_pause_minutes(day_events)
@@ -905,6 +925,7 @@ def pause_control():
 
     prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
     next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
+    can_go_next_month = (selected_year, selected_month) < (today_local.year, today_local.month)
 
     return render_template(
         "employee/pause_control.html",
@@ -919,6 +940,7 @@ def pause_control():
         next_month=next_month,
         minutes_to_hhmm=_minutes_to_hhmm,
         active_shift=active_shift,
+        can_go_next_month=can_go_next_month,
     )
 
 
