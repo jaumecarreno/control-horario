@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -245,24 +246,48 @@ def test_presence_control_uses_employee_shift_history_for_expected_hours(client,
     assert "Balance -79:00" in html
 
 
-def test_presence_control_hides_today_and_future_days_in_current_month(client, monkeypatch):
+def test_presence_control_shows_current_and_future_days_without_balance_values(client, app, monkeypatch):
     response = _login(client)
     assert response.status_code == 302
     _select_tenant_a(client)
     _freeze_employee_now(monkeypatch, 2026, 2, 17)
 
+    with app.app_context():
+        employee_id = db.session.execute(select(Employee.id).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+        db.session.add(
+            TimeEvent(
+                tenant_id=tenant_id,
+                employee_id=employee_id,
+                type=TimeEventType.IN,
+                source=TimeEventSource.WEB,
+                ts=datetime(2026, 2, 17, 8, 30, tzinfo=timezone.utc),
+            )
+        )
+        db.session.commit()
+
     page = client.get("/me/presence-control?month=2026-02")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
     assert "16/02/2026" in html
-    assert "17/02/2026" not in html
-    assert "18/02/2026" not in html
+    assert "17/02/2026" in html
+    assert "18/02/2026" in html
     assert "Esperado 82:30" in html
     assert 'aria-label="Mes siguiente deshabilitado"' in html
     assert "/me/presence-control?month=2026-03" not in html
+    assert re.search(
+        r"<tr>\s*<td>17/02/2026</td>.*?<td>\s*Entrada 09:30\s*</td>\s*<td>-</td>\s*<td>-</td>\s*<td>-</td>\s*</tr>",
+        html,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"<tr>\s*<td>18/02/2026</td>\s*<td>\s*-\s*</td>\s*<td>-</td>\s*<td>-</td>\s*<td>-</td>\s*</tr>",
+        html,
+        re.DOTALL,
+    )
 
 
-def test_pause_control_hides_today_and_future_days_in_current_month(client, monkeypatch):
+def test_pause_control_shows_current_and_future_days_without_balance_values(client, monkeypatch):
     response = _login(client)
     assert response.status_code == 302
     _select_tenant_a(client)
@@ -272,11 +297,16 @@ def test_pause_control_hides_today_and_future_days_in_current_month(client, monk
     assert page.status_code == 200
     html = page.get_data(as_text=True)
     assert "16/02/2026" in html
-    assert "17/02/2026" not in html
-    assert "18/02/2026" not in html
+    assert "17/02/2026" in html
+    assert "18/02/2026" in html
     assert "Esperado 05:30" in html
     assert 'aria-label="Mes siguiente deshabilitado"' in html
     assert "/me/pause-control?month=2026-03" not in html
+    assert re.search(
+        r"<tr>\s*<td>17/02/2026</td>\s*<td>\s*-\s*</td>\s*<td>-</td>\s*<td>-</td>\s*<td>-</td>\s*</tr>",
+        html,
+        re.DOTALL,
+    )
 
 
 def test_presence_control_redirects_future_month_to_current_month(client, monkeypatch):

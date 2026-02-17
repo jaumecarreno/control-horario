@@ -50,9 +50,9 @@
                 -
               {% endif %}
             </td>
-            <td>{{ minutes_to_hhmm(row.worked) }}</td>
-            <td>{{ minutes_to_hhmm(row.expected) }}</td>
-            <td>{{ minutes_to_hhmm(row.balance) }}</td>
+            <td>{% if row.is_open_day %}-{% else %}{{ minutes_to_hhmm(row.worked) }}{% endif %}</td>
+            <td>{% if row.is_open_day %}-{% else %}{{ minutes_to_hhmm(row.expected) }}{% endif %}</td>
+            <td>{% if row.is_open_day %}-{% else %}{{ minutes_to_hhmm(row.balance) }}{% endif %}</td>
           </tr>
         {% else %}
           <tr>

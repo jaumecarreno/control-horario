@@ -471,6 +471,19 @@ def _daily_worked_minutes(events: list[TimeEvent]) -> tuple[int, list[str], bool
     return worked_minutes, entries_and_exits, includes_manual
 
 
+def _daily_punch_markers(events: list[TimeEvent]) -> list[str]:
+    markers: list[str] = []
+    for event in events:
+        if event.type != TimeEventType.IN and event.type != TimeEventType.OUT:
+            continue
+        event_label = "Entrada" if event.type == TimeEventType.IN else "Salida"
+        marker = f"{event_label} {_to_app_tz(event.ts).strftime('%H:%M')}"
+        if bool((event.meta_json or {}).get("manual")):
+            marker += " (Manual)"
+        markers.append(marker)
+    return markers
+
+
 def _daily_pause_minutes(events: list[TimeEvent]) -> tuple[int, list[str]]:
     pause_minutes = 0
     pause_pairs: list[str] = []
@@ -781,17 +794,24 @@ def presence_control():
     month_rows = []
     month_worked = 0
     month_expected = 0
-    visible_end_day = month_end_day
-    if (selected_year, selected_month) == (today_local.year, today_local.month):
-        visible_end_day = today_local - timedelta(days=1)
-
-    visible_days = 0
-    if visible_end_day >= month_start_day:
-        visible_days = (visible_end_day - month_start_day).days + 1
-
-    for day_index in range(visible_days):
-        current_day = month_start_day + timedelta(days=day_index)
+    for day_index in range(days_in_month):
+        current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
+        is_open_day = (selected_year, selected_month) == (today_local.year, today_local.month) and current_day >= today_local
+        if is_open_day:
+            month_rows.append(
+                {
+                    "day": current_day,
+                    "pairs": _daily_punch_markers(day_events),
+                    "worked": None,
+                    "expected": None,
+                    "balance": None,
+                    "has_manual": any(bool((event.meta_json or {}).get("manual")) for event in day_events),
+                    "is_open_day": True,
+                }
+            )
+            continue
+
         day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         worked_minutes, day_pairs, includes_manual = _daily_worked_minutes(day_events)
         paused_minutes, _ = _daily_pause_minutes(day_events)
@@ -813,6 +833,7 @@ def presence_control():
                 "expected": expected_minutes,
                 "balance": worked_minutes - expected_minutes,
                 "has_manual": includes_manual,
+                "is_open_day": False,
             }
         )
 
@@ -897,17 +918,23 @@ def pause_control():
     month_rows = []
     month_paused = 0
     month_expected = 0
-    visible_end_day = month_end_day
-    if (selected_year, selected_month) == (today_local.year, today_local.month):
-        visible_end_day = today_local - timedelta(days=1)
-
-    visible_days = 0
-    if visible_end_day >= month_start_day:
-        visible_days = (visible_end_day - month_start_day).days + 1
-
-    for day_index in range(visible_days):
-        current_day = month_start_day + timedelta(days=day_index)
+    for day_index in range(days_in_month):
+        current_day = date(selected_year, selected_month, day_index + 1)
         day_events = events_by_day.get(current_day, [])
+        is_open_day = (selected_year, selected_month) == (today_local.year, today_local.month) and current_day >= today_local
+        if is_open_day:
+            month_rows.append(
+                {
+                    "day": current_day,
+                    "pairs": _daily_punch_markers(day_events),
+                    "paused": None,
+                    "expected": None,
+                    "balance": None,
+                    "is_open_day": True,
+                }
+            )
+            continue
+
         day_shift = fallback_shift if fallback_shift is not None else _shift_for_day(assignment_rows, current_day)
         paused_minutes, day_pairs = _daily_pause_minutes(day_events)
         expected_minutes = _expected_pause_minutes_for_day(day_shift, current_day)
@@ -920,6 +947,7 @@ def pause_control():
                 "paused": paused_minutes,
                 "expected": expected_minutes,
                 "balance": paused_minutes - expected_minutes,
+                "is_open_day": False,
             }
         )
 
