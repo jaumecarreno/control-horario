@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Flask, g, redirect, request, session, url_for
+from flask import Flask, g, redirect, render_template, request, session, url_for
 from flask_login import current_user
 
 from app.blueprints.admin import bp as admin_bp
@@ -122,5 +122,29 @@ def create_app(config_object: type[Config] = Config) -> Flask:
     def cleanup_session_context(_exc: BaseException | None) -> None:
         db.session.info.pop("tenant_id", None)
         db.session.info.pop("actor_user_id", None)
+
+    @app.errorhandler(409)
+    def conflict_error(error):
+        endpoint = request.endpoint or ""
+        if endpoint.startswith("employee."):
+            back_url = url_for("employee.me_leaves")
+            back_label = "Volver a Vacaciones y permisos"
+        elif endpoint.startswith("admin."):
+            back_url = url_for("admin.approvals")
+            back_label = "Volver a Solicitudes"
+        else:
+            back_url = url_for("main.index")
+            back_label = "Volver al inicio"
+
+        error_message = getattr(error, "description", None) or "La operacion solicitada ya no es valida en este estado."
+        return (
+            render_template(
+                "errors/409.html",
+                error_message=error_message,
+                back_url=back_url,
+                back_label=back_label,
+            ),
+            409,
+        )
 
     return app

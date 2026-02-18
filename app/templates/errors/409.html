@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    <h1>No se pudo completar la operacion</h1>
+    <p>{{ error_message }}</p>
+    <p class="muted">El estado de la solicitud cambio y debes volver a cargar la vista de trabajo.</p>
+    <div style="margin-top: 1rem;">
+      <a class="button" href="{{ back_url }}">{{ back_label }}</a>
+    </div>
+  </section>
+{% endblock %}

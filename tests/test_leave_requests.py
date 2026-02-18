@@ -136,6 +136,24 @@ def test_me_leaves_creates_requested_leave_and_audit_record(client, app):
         assert audit.payload_json["status"] == LeaveRequestStatus.REQUESTED.value
 
 
+def test_employee_navigation_has_leave_sections_link(client):
+    response = _login_owner(client)
+    assert response.status_code == 302
+    _select_tenant(client, "tenant-a")
+
+    presence_page = client.get("/me/presence-control", follow_redirects=True)
+    assert presence_page.status_code == 200
+    presence_html = presence_page.get_data(as_text=True)
+    assert 'href="/me/leaves"' in presence_html
+    assert "Vacaciones y permisos" in presence_html
+
+    leaves_page = client.get("/me/leaves", follow_redirects=True)
+    assert leaves_page.status_code == 200
+    leaves_html = leaves_page.get_data(as_text=True)
+    assert 'href="/me/presence-control"' in leaves_html
+    assert 'href="/me/pause-control"' in leaves_html
+
+
 def test_me_leaves_requires_minutes_for_hour_policies(client, app):
     response = _login_owner(client)
     assert response.status_code == 302
@@ -339,6 +357,11 @@ def test_me_leave_cancel_rejects_already_decided_requests(client, app):
 
     cancel = client.post(f"/me/leaves/{leave_request_id}/cancel", follow_redirects=False)
     assert cancel.status_code == 409
+    cancel_html = cancel.get_data(as_text=True)
+    assert "No se pudo completar la operacion" in cancel_html
+    assert "La solicitud ya fue decidida." in cancel_html
+    assert 'href="/me/leaves"' in cancel_html
+    assert "Volver a Vacaciones y permisos" in cancel_html
 
     with app.app_context():
         refreshed = db.session.get(LeaveRequest, leave_request_id)
@@ -409,6 +432,23 @@ def test_admin_approval_updates_status_and_audit(admin_only_client):
         assert audit.payload_json["status"] == LeaveRequestStatus.APPROVED.value
 
 
+def test_admin_navigation_has_approvals_link(admin_only_client):
+    login_response = _login_admin(admin_only_client)
+    assert login_response.status_code == 302
+
+    employees_page = admin_only_client.get("/admin/employees", follow_redirects=True)
+    assert employees_page.status_code == 200
+    employees_html = employees_page.get_data(as_text=True)
+    assert 'href="/admin/approvals"' in employees_html
+    assert "Solicitudes" in employees_html
+
+    approvals_page = admin_only_client.get("/admin/approvals", follow_redirects=True)
+    assert approvals_page.status_code == 200
+    approvals_html = approvals_page.get_data(as_text=True)
+    assert 'href="/admin/employees"' in approvals_html
+    assert 'href="/admin/turnos"' in approvals_html
+
+
 def test_admin_approval_redecide_returns_conflict(admin_only_client):
     login_response = _login_admin(admin_only_client)
     assert login_response.status_code == 302
@@ -422,6 +462,11 @@ def test_admin_approval_redecide_returns_conflict(admin_only_client):
 
     second = admin_only_client.post(f"/admin/approvals/{leave_request_id}/reject", follow_redirects=False)
     assert second.status_code == 409
+    second_html = second.get_data(as_text=True)
+    assert "No se pudo completar la operacion" in second_html
+    assert "La solicitud ya fue decidida." in second_html
+    assert 'href="/admin/approvals"' in second_html
+    assert "Volver a Solicitudes" in second_html
 
 
 def test_admin_cannot_decide_request_from_other_tenant(admin_only_client):

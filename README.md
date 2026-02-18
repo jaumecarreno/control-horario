@@ -121,6 +121,17 @@ Flujo funcional implementado para vacaciones/permisos:
 
 Especificacion completa: `docs/spec-leaves-mvp.md`
 
+### Uso diario
+
+- Empleado:
+  - Abrir `Vacaciones y permisos` desde la navegacion de empleado.
+  - Crear solicitudes nuevas y cancelar solo las que esten en estado pendiente.
+- Admin:
+  - Abrir `Solicitudes` desde la navegacion de admin.
+  - Aprobar o rechazar solicitudes pendientes del tenant activo.
+- Conflictos:
+  - Si una solicitud ya fue decidida y se intenta volver a operar, la app devuelve `409` con pantalla amigable y enlace directo de vuelta al flujo correcto.
+
 ## Tests
 
 Run unit tests:

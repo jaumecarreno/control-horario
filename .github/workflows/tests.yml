@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q
+
+  integration-rls:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      PYTHONPATH: .
+      TEST_DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Skip when TEST_DATABASE_URL is missing
+        if: env.TEST_DATABASE_URL == ''
+        run: echo "TEST_DATABASE_URL no configurada. Se omiten tests de integracion RLS."
+
+      - name: Run integration RLS tests
+        if: env.TEST_DATABASE_URL != ''
+        run: pytest -q -m integration
