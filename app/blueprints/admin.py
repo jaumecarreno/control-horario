@@ -891,11 +891,18 @@ def shifts_edit(shift_id: UUID):
 @tenant_required
 @roles_required(ADMIN_ROLES)
 def approvals():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
     stmt = (
         select(LeaveRequest, Employee, LeaveType)
         .join(Employee, Employee.id == LeaveRequest.employee_id)
         .join(LeaveType, LeaveType.id == LeaveRequest.type_id)
-        .where(LeaveRequest.status == LeaveRequestStatus.REQUESTED)
+        .where(
+            LeaveRequest.tenant_id == tenant_id,
+            LeaveRequest.status == LeaveRequestStatus.REQUESTED,
+        )
         .order_by(LeaveRequest.created_at.asc())
     )
     rows = db.session.execute(stmt).all()
@@ -903,11 +910,20 @@ def approvals():
 
 
 def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
-    leave_request = db.session.get(LeaveRequest, leave_request_id)
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    leave_request = db.session.execute(
+        select(LeaveRequest).where(
+            LeaveRequest.id == leave_request_id,
+            LeaveRequest.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
     if leave_request is None:
         abort(404)
     if leave_request.status != LeaveRequestStatus.REQUESTED:
-        abort(409, description="Leave request already decided.")
+        abort(409, description="La solicitud ya fue decidida.")
 
     leave_request.status = status
     leave_request.approver_user_id = UUID(current_user.get_id())
@@ -916,10 +932,22 @@ def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
         action=f"LEAVE_{status.value}",
         entity_type="leave_requests",
         entity_id=leave_request.id,
-        payload={"status": status.value},
+        payload={
+            "employee_id": str(leave_request.employee_id),
+            "type_id": str(leave_request.type_id),
+            "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
+            "date_from": leave_request.date_from.isoformat(),
+            "date_to": leave_request.date_to.isoformat(),
+            "minutes": leave_request.minutes,
+            "status": leave_request.status.value,
+        },
     )
     db.session.commit()
-    flash(f"Leave request {status.value.lower()}.", "success")
+    status_labels = {
+        LeaveRequestStatus.APPROVED: "aprobada",
+        LeaveRequestStatus.REJECTED: "rechazada",
+    }
+    flash(f"Solicitud {status_labels.get(status, status.value.lower())}.", "success")
     return redirect(url_for("admin.approvals"))
 
 

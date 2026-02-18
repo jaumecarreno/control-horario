@@ -58,6 +58,12 @@ LEAVE_POLICY_UNIT_LABELS = {
     LeavePolicyUnit.DAYS: "dias",
     LeavePolicyUnit.HOURS: "horas",
 }
+LEAVE_STATUS_LABELS = {
+    LeaveRequestStatus.REQUESTED: "Pendiente",
+    LeaveRequestStatus.APPROVED: "Aprobada",
+    LeaveRequestStatus.REJECTED: "Rechazada",
+    LeaveRequestStatus.CANCELLED: "Cancelada",
+}
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
@@ -397,6 +403,26 @@ def _requested_amount_for_policy(
     if requested_minutes is None or requested_minutes <= 0:
         return None, "Para permisos en horas debes indicar minutos mayores que cero."
     return Decimal(requested_minutes) / Decimal(60), None
+
+
+def _has_leave_overlap(
+    employee_id: uuid.UUID,
+    leave_policy_id: uuid.UUID,
+    requested_from: date,
+    requested_to: date,
+) -> bool:
+    stmt = (
+        select(LeaveRequest.id)
+        .where(
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.leave_policy_id == leave_policy_id,
+            LeaveRequest.status.in_([LeaveRequestStatus.REQUESTED, LeaveRequestStatus.APPROVED]),
+            LeaveRequest.date_from <= requested_to,
+            LeaveRequest.date_to >= requested_from,
+        )
+        .limit(1)
+    )
+    return db.session.execute(stmt).scalar_one_or_none() is not None
 
 
 def _business_days_in_month(year: int, month: int) -> int:
@@ -979,7 +1005,8 @@ def pause_control():
 def me_leaves():
     employee = _employee_for_current_user()
     form = LeaveRequestForm()
-    form.type_id.label.text = "Vacacion / permiso"
+    form.type_id.label.text = "Vacaciones / permisos"
+    form.submit.label.text = "Enviar solicitud"
 
     today_local = datetime.now(_app_timezone()).date()
     active_shift = _current_shift_for_employee_day(employee, today_local)
@@ -1002,7 +1029,7 @@ def me_leaves():
     elif form.validate_on_submit():
         selected_policy = policy_by_id.get(form.type_id.data)
         if selected_policy is None:
-            flash("Vacacion o permiso invalido para tu turno actual.", "danger")
+            flash("Vacaciones o permiso invalido para tu turno actual.", "danger")
         else:
             requested_from = form.date_from.data
             requested_to = form.date_to.data
@@ -1018,6 +1045,13 @@ def me_leaves():
                 if amount_error is not None or requested_amount is None:
                     flash(amount_error or "Importe solicitado invalido.", "danger")
                 else:
+                    if _has_leave_overlap(employee.id, selected_policy.id, requested_from, requested_to):
+                        flash(
+                            "Ya existe una solicitud pendiente o aprobada que se solapa con estas fechas.",
+                            "danger",
+                        )
+                        return redirect(url_for("employee.me_leaves"))
+
                     consumption = _policy_consumption_by_employee(employee.id, [selected_policy])
                     totals = consumption.get(selected_policy.id, {"approved": Decimal("0"), "pending": Decimal("0")})
                     used = totals["approved"] + totals["pending"]
@@ -1049,10 +1083,11 @@ def me_leaves():
                                 "date_from": requested_from.isoformat(),
                                 "date_to": requested_to.isoformat(),
                                 "minutes": leave_request.minutes,
+                                "status": leave_request.status.value,
                             },
                         )
                         db.session.commit()
-                        flash("Leave request submitted.", "success")
+                        flash("Solicitud registrada.", "success")
                         return redirect(url_for("employee.me_leaves"))
 
     history_stmt = (
@@ -1069,4 +1104,42 @@ def me_leaves():
         employee=employee,
         active_shift=active_shift,
         available_policies=available_policies,
+        leave_status_labels=LEAVE_STATUS_LABELS,
     )
+
+
+@bp.post("/me/leaves/<uuid:leave_request_id>/cancel")
+@login_required
+@tenant_required
+def leave_cancel(leave_request_id: uuid.UUID):
+    employee = _employee_for_current_user()
+    leave_request = db.session.execute(
+        select(LeaveRequest).where(
+            LeaveRequest.id == leave_request_id,
+            LeaveRequest.employee_id == employee.id,
+        )
+    ).scalar_one_or_none()
+    if leave_request is None:
+        abort(404)
+    if leave_request.status != LeaveRequestStatus.REQUESTED:
+        abort(409, description="La solicitud ya fue decidida.")
+
+    leave_request.status = LeaveRequestStatus.CANCELLED
+    leave_request.decided_at = datetime.now(timezone.utc)
+    log_audit(
+        action="LEAVE_CANCELLED",
+        entity_type="leave_requests",
+        entity_id=leave_request.id,
+        payload={
+            "employee_id": str(employee.id),
+            "type_id": str(leave_request.type_id),
+            "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
+            "date_from": leave_request.date_from.isoformat(),
+            "date_to": leave_request.date_to.isoformat(),
+            "minutes": leave_request.minutes,
+            "status": leave_request.status.value,
+        },
+    )
+    db.session.commit()
+    flash("Solicitud cancelada.", "success")
+    return redirect(url_for("employee.me_leaves"))

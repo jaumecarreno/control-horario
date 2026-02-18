@@ -2,15 +2,15 @@
 
 {% block content %}
   <section class="card">
-    <h1>Pending approvals</h1>
+    <h1>Solicitudes pendientes</h1>
     <table>
       <thead>
         <tr>
-          <th>Employee</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Actions</th>
+          <th>Empleado</th>
+          <th>Tipo</th>
+          <th>Desde</th>
+          <th>Hasta</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -23,19 +23,18 @@
             <td>
               <form class="inline" method="post" action="{{ url_for('admin.approval_approve', leave_request_id=leave_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit">Approve</button>
+                <button type="submit">Aprobar</button>
               </form>
               <form class="inline" method="post" action="{{ url_for('admin.approval_reject', leave_request_id=leave_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="danger">Reject</button>
+                <button type="submit" class="danger">Rechazar</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No pending requests.</td></tr>
+          <tr><td colspan="5">No hay solicitudes pendientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </section>
 {% endblock %}
-

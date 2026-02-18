@@ -105,6 +105,22 @@ Important:
 - Do not grant `BYPASSRLS` to the application role.
 - `FORCE ROW LEVEL SECURITY` is enabled on tenant tables.
 
+## Permisos y bolsas (MVP)
+
+Flujo funcional implementado para vacaciones/permisos:
+
+- Estados permitidos: `REQUESTED -> APPROVED | REJECTED | CANCELLED`.
+- `POST /me/leaves` valida:
+  - Rango de fechas dentro de la vigencia de la bolsa.
+  - Reglas por unidad (`DAYS` y `HOURS`).
+  - Saldo disponible considerando aprobadas y pendientes.
+  - Solapes con solicitudes activas de la misma bolsa.
+- `POST /me/leaves/<id>/cancel` permite cancelar solo solicitudes propias en `REQUESTED`.
+- `POST /admin/approvals/<id>/approve|reject` decide solicitudes del tenant activo y devuelve conflicto si ya estaban decididas.
+- Auditoria en `audit_log` para `LEAVE_REQUESTED`, `LEAVE_APPROVED`, `LEAVE_REJECTED`, `LEAVE_CANCELLED`.
+
+Especificacion completa: `docs/spec-leaves-mvp.md`
+
 ## Tests
 
 Run unit tests:

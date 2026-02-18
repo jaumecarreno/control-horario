@@ -2,7 +2,7 @@
 
 {% block content %}
   <section class="card">
-    <h1>Leave requests</h1>
+    <h1>Solicitudes de vacaciones y permisos</h1>
     <p class="muted">{{ employee.name }}</p>
     {% if active_shift %}
       <p class="muted" style="margin-top:-.35rem;">Turno activo: {{ active_shift.name }}</p>
@@ -13,11 +13,11 @@
       {{ form.hidden_tag() }}
       <label for="{{ form.type_id.id }}">{{ form.type_id.label.text }}</label>
       {{ form.type_id() }}
-      <label for="{{ form.date_from.id }}">From</label>
+      <label for="{{ form.date_from.id }}">Desde</label>
       {{ form.date_from() }}
-      <label for="{{ form.date_to.id }}">To</label>
+      <label for="{{ form.date_to.id }}">Hasta</label>
       {{ form.date_to() }}
-      <label for="{{ form.minutes.id }}">Minutes</label>
+      <label for="{{ form.minutes.id }}">Minutos</label>
       {{ form.minutes() }}
       {% if available_policies %}
         <div style="margin-top: 1rem;">{{ form.submit() }}</div>
@@ -29,15 +29,16 @@
   </section>
 
   <section class="card">
-    <h2>History</h2>
+    <h2>Historial</h2>
     <table>
       <thead>
         <tr>
-          <th>Created</th>
-          <th>Type</th>
-          <th>From</th>
-          <th>To</th>
-          <th>Status</th>
+          <th>Creada</th>
+          <th>Tipo</th>
+          <th>Desde</th>
+          <th>Hasta</th>
+          <th>Estado</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -47,10 +48,20 @@
             <td>{{ leave_type.code }}</td>
             <td>{{ leave_request.date_from }}</td>
             <td>{{ leave_request.date_to }}</td>
-            <td>{{ leave_request.status.value }}</td>
+            <td>{{ leave_status_labels.get(leave_request.status, leave_request.status.value) }}</td>
+            <td>
+              {% if leave_request.status.value == "REQUESTED" %}
+                <form class="inline" method="post" action="{{ url_for('employee.leave_cancel', leave_request_id=leave_request.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="danger">Cancelar</button>
+                </form>
+              {% else %}
+                -
+              {% endif %}
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No requests yet.</td></tr>
+          <tr><td colspan="6">Aun no hay solicitudes.</td></tr>
         {% endfor %}
       </tbody>
     </table>

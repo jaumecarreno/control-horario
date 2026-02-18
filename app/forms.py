@@ -40,15 +40,15 @@ class EmployeeEditForm(FlaskForm):
 
 
 class LeaveRequestForm(FlaskForm):
-    type_id = SelectField("Leave type", choices=[], validators=[DataRequired()], coerce=str)
-    date_from = DateField("From", validators=[DataRequired()])
-    date_to = DateField("To", validators=[DataRequired()])
-    minutes = IntegerField("Minutes (optional)", validators=[Optional()])
-    submit = SubmitField("Submit request")
+    type_id = SelectField("Vacacion / permiso", choices=[], validators=[DataRequired()], coerce=str)
+    date_from = DateField("Desde", validators=[DataRequired()])
+    date_to = DateField("Hasta", validators=[DataRequired()])
+    minutes = IntegerField("Minutos (opcional)", validators=[Optional()])
+    submit = SubmitField("Enviar solicitud")
 
     def validate_date_to(self, field: DateField) -> None:
         if self.date_from.data and field.data and field.data < self.date_from.data:
-            raise ValidationError("End date must be on or after start date.")
+            raise ValidationError("La fecha de fin debe ser igual o posterior a la fecha de inicio.")
 
 
 class DateRangeExportForm(FlaskForm):
