@@ -15,7 +15,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.extensions import db
-from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm
+from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm, UserCreateForm
 from app.models import (
     Employee,
     EmployeeShiftAssignment,
@@ -24,8 +24,10 @@ from app.models import (
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
+    Membership,
     MembershipRole,
     Shift,
+    User,
     ShiftLeavePolicy,
     TimeAdjustment,
     TimeEvent,
@@ -340,6 +342,109 @@ def _current_shift_names_by_employee(employee_ids: list[UUID], today: date) -> d
     for assignment, shift in rows:
         current_shift_by_employee.setdefault(assignment.employee_id, shift.name)
     return current_shift_by_employee
+
+
+
+def _employee_choices(tenant_id: UUID) -> list[tuple[str, str]]:
+    rows = list(db.session.execute(select(Employee).where(Employee.tenant_id == tenant_id).order_by(Employee.name.asc())).scalars().all())
+    return [(str(employee.id), f"{employee.name} ({employee.email or '-'})") for employee in rows]
+
+
+@bp.get("/admin/users")
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def users_list():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    rows = list(
+        db.session.execute(
+            select(Membership, User, Employee)
+            .join(User, User.id == Membership.user_id)
+            .outerjoin(Employee, Employee.id == Membership.employee_id)
+            .where(Membership.tenant_id == tenant_id)
+            .order_by(User.email.asc())
+        ).all()
+    )
+    return render_template("admin/users.html", rows=rows)
+
+
+@bp.route("/admin/users/new", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def users_new():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = UserCreateForm()
+    form.employee_id.choices = [("", "Sin empleado")] + _employee_choices(tenant_id)
+
+    if form.validate_on_submit():
+        normalized_email = form.email.data.strip().lower()
+        password = form.password.data
+        confirm_password = form.confirm_password.data
+
+        if password != confirm_password:
+            flash("La confirmacion de password no coincide.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        existing = db.session.execute(select(User).where(User.email == normalized_email)).scalar_one_or_none()
+        if existing is not None:
+            flash("Ya existe un usuario con ese email.", "warning")
+            return render_template("admin/user_new.html", form=form)
+
+        try:
+            selected_role = MembershipRole(form.role.data)
+        except ValueError:
+            flash("Rol invalido.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        selected_employee_id = form.employee_id.data.strip() if form.employee_id.data else ""
+        employee_id = None
+        if selected_role is MembershipRole.EMPLOYEE:
+            if not selected_employee_id:
+                flash("Debe seleccionar un empleado para el rol EMPLOYEE.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            try:
+                parsed_employee_id = UUID(selected_employee_id)
+            except ValueError:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            employee = db.session.execute(
+                select(Employee).where(Employee.id == parsed_employee_id, Employee.tenant_id == tenant_id)
+            ).scalar_one_or_none()
+            if employee is None:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            employee_id = employee.id
+        elif selected_employee_id:
+            flash("Los roles admin/manager/owner no deben tener empleado asociado.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        user = User(
+            email=normalized_email,
+            password_hash=hash_secret(password),
+            is_active=bool(form.active.data),
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        membership = Membership(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            role=selected_role,
+            employee_id=employee_id,
+        )
+        db.session.add(membership)
+        db.session.commit()
+        flash("Usuario creado.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_new.html", form=form)
 
 
 @bp.get("/admin/employees")
