@@ -34,6 +34,7 @@ punch_correction_status = postgresql.ENUM(
     "REJECTED",
     "CANCELLED",
     name="punch_correction_status",
+    create_type=False,
 )
 
 

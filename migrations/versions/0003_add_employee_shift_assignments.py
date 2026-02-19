@@ -46,6 +46,10 @@ def upgrade() -> None:
     )
 
     bind = op.get_bind()
+    tenants = sa.table(
+        "tenants",
+        sa.column("id", sa.Uuid()),
+    )
     employees = sa.table(
         "employees",
         sa.column("id", sa.Uuid()),
@@ -70,8 +74,9 @@ def upgrade() -> None:
     )
 
     default_effective_from = date(1970, 1, 1)
-    employee_rows = bind.execute(sa.select(employees.c.id, employees.c.tenant_id)).all()
-    for employee_id, tenant_id in employee_rows:
+    tenant_rows = bind.execute(sa.select(tenants.c.id)).all()
+    for (tenant_id,) in tenant_rows:
+        bind.exec_driver_sql(f"SET LOCAL app.tenant_id = '{tenant_id}'")
         shift_id = bind.execute(
             sa.select(shifts.c.id)
             .where(shifts.c.tenant_id == tenant_id)
@@ -80,17 +85,21 @@ def upgrade() -> None:
         ).scalar_one_or_none()
         if shift_id is None:
             continue
-        bind.execute(
-            sa.insert(assignments).values(
-                id=uuid.uuid4(),
-                tenant_id=tenant_id,
-                employee_id=employee_id,
-                shift_id=shift_id,
-                effective_from=default_effective_from,
-                effective_to=None,
-                created_at=datetime.now(timezone.utc),
+        employee_rows = bind.execute(
+            sa.select(employees.c.id).where(employees.c.tenant_id == tenant_id)
+        ).all()
+        for (employee_id,) in employee_rows:
+            bind.execute(
+                sa.insert(assignments).values(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    employee_id=employee_id,
+                    shift_id=shift_id,
+                    effective_from=default_effective_from,
+                    effective_to=None,
+                    created_at=datetime.now(timezone.utc),
+                )
             )
-        )
 
 
 def downgrade() -> None:

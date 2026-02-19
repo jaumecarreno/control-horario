@@ -23,6 +23,12 @@ leave_policy_unit = sa.Enum("DAYS", "HOURS", name="leave_policy_unit")
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    tenant_id = bind.execute(sa.text("SELECT id::text FROM tenants ORDER BY id LIMIT 1")).scalar_one_or_none()
+    if tenant_id is None:
+        tenant_id = "00000000-0000-0000-0000-000000000000"
+    bind.exec_driver_sql(f"SET LOCAL app.tenant_id = '{tenant_id}'")
+
     op.create_table(
         "shift_leave_policies",
         sa.Column("id", sa.Uuid(), nullable=False),
