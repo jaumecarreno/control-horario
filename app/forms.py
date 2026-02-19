@@ -161,6 +161,46 @@ class DateRangeExportForm(FlaskForm):
             raise ValidationError("End date must be on or after start date.")
 
 
+class AttendanceReportForm(FlaskForm):
+    report_type = SelectField(
+        "Tipo de reporte",
+        choices=[
+            ("control", "Control horario"),
+            ("executive", "Resumen ejecutivo"),
+        ],
+        validators=[DataRequired()],
+        default="control",
+    )
+    output_format = SelectField(
+        "Formato",
+        choices=[
+            ("csv", "CSV"),
+            ("json", "JSON"),
+            ("xlsx", "XLSX"),
+            ("pdf", "PDF"),
+        ],
+        validators=[DataRequired()],
+        default="csv",
+    )
+    employee_id = SelectField("Empleado (opcional)", choices=[], validators=[Optional()], coerce=str)
+    date_from = DateField("Desde", validators=[DataRequired()], default=date.today)
+    date_to = DateField("Hasta", validators=[DataRequired()], default=date.today)
+    submit = SubmitField("Generar reporte")
+
+    def validate_date_to(self, field: DateField) -> None:
+        if self.date_from.data and field.data and field.data < self.date_from.data:
+            raise ValidationError("La fecha fin debe ser igual o posterior a la fecha inicio.")
+
+    def validate_employee_id(self, field: SelectField) -> None:
+        employee_id = (field.data or "").strip()
+        if not employee_id:
+            return
+        try:
+            UUID(employee_id)
+        except ValueError as exc:
+            raise ValidationError("Empleado invalido.") from exc
+
+
 class ShiftCreateForm(FlaskForm):
     name = StringField("Nombre", validators=[DataRequired(), Length(max=128)])
     break_counts_as_worked_bool = BooleanField("El descanso cuenta como jornada laboral", default=True)

@@ -2,16 +2,50 @@
 
 {% block content %}
   <section class="card">
-    <h1>Payroll report (stub)</h1>
-    <p class="muted">Basic CSV export of time events in a date range.</p>
+    {% include "admin/_sections.html" %}
+    <h1>Reportes</h1>
+    <p class="muted">Exporta reportes de control horario o resumen ejecutivo en PDF, JSON, CSV o XLSX.</p>
+
     <form method="post" action="{{ url_for('admin.payroll_export') }}">
       {{ form.hidden_tag() }}
-      <label for="{{ form.date_from.id }}">From</label>
-      {{ form.date_from() }}
-      <label for="{{ form.date_to.id }}">To</label>
-      {{ form.date_to() }}
+
+      <label for="{{ form.report_type.id }}">Tipo de reporte</label>
+      {{ form.report_type() }}
+      {% for error in form.report_type.errors %}
+        <div class="flash danger">{{ error }}</div>
+      {% endfor %}
+
+      <label for="{{ form.output_format.id }}">Formato</label>
+      {{ form.output_format() }}
+      {% for error in form.output_format.errors %}
+        <div class="flash danger">{{ error }}</div>
+      {% endfor %}
+
+      <label for="{{ form.employee_id.id }}">Empleado (opcional)</label>
+      {{ form.employee_id() }}
+      <p class="muted" style="margin-top: .25rem;">Si lo dejas vacio se aplica a todos los empleados del tenant.</p>
+      {% for error in form.employee_id.errors %}
+        <div class="flash danger">{{ error }}</div>
+      {% endfor %}
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+        <div>
+          <label for="{{ form.date_from.id }}">Desde</label>
+          {{ form.date_from() }}
+          {% for error in form.date_from.errors %}
+            <div class="flash danger">{{ error }}</div>
+          {% endfor %}
+        </div>
+        <div>
+          <label for="{{ form.date_to.id }}">Hasta</label>
+          {{ form.date_to() }}
+          {% for error in form.date_to.errors %}
+            <div class="flash danger">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
+
       <div style="margin-top: 1rem;">{{ form.submit() }}</div>
     </form>
   </section>
 {% endblock %}
-

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import csv
-import io
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -26,7 +25,7 @@ from app.authorization import (
 from app.extensions import db
 from app.forms import (
     AdminResetPasswordForm,
-    DateRangeExportForm,
+    AttendanceReportForm,
     EmployeeCreateForm,
     EmployeeEditForm,
     ShiftCreateForm,
@@ -52,7 +51,9 @@ from app.models import (
     TimeEvent,
     TimeEventSource,
     TimeEventSupersession,
+    TimeEventType,
 )
+from app.report_export import to_csv_bytes, to_json_bytes, to_pdf_bytes, to_xlsx_bytes
 from app.security import hash_secret
 from app.tenant import get_active_tenant_id, tenant_required
 from app.time_events import visible_events_with_employee_between_stmt
@@ -79,6 +80,22 @@ PUNCH_CORRECTION_STATUS_LABELS = {
     PunchCorrectionStatus.APPROVED: "Aprobada",
     PunchCorrectionStatus.REJECTED: "Rechazada",
     PunchCorrectionStatus.CANCELLED: "Cancelada",
+}
+REPORT_TYPE_LABELS = {
+    "control": "Control horario",
+    "executive": "Resumen ejecutivo",
+}
+REPORT_FORMAT_CONTENT_TYPES = {
+    "csv": "text/csv; charset=utf-8",
+    "json": "application/json; charset=utf-8",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pdf": "application/pdf",
+}
+REPORT_FORMAT_EXTENSIONS = {
+    "csv": "csv",
+    "json": "json",
+    "xlsx": "xlsx",
+    "pdf": "pdf",
 }
 
 
@@ -426,6 +443,197 @@ def _would_remove_last_admin_access(tenant_id: UUID, target_user_id: UUID, new_r
         return False
 
     return _tenant_admin_count(tenant_id) <= 1
+
+
+def _report_timezone() -> ZoneInfo:
+    tz_name = current_app.config.get("APP_TIMEZONE", "Europe/Madrid")
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
+
+
+def _as_utc(ts: datetime) -> datetime:
+    aware_ts = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return aware_ts.astimezone(timezone.utc)
+
+
+def _to_report_tz(ts: datetime) -> datetime:
+    return _as_utc(ts).astimezone(_report_timezone())
+
+
+def _report_window_utc(date_from: date, date_to: date) -> tuple[datetime, datetime]:
+    report_tz = _report_timezone()
+    start_local = datetime.combine(date_from, time.min, tzinfo=report_tz)
+    end_local = datetime.combine(date_to, time.max, tzinfo=report_tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _attendance_report_employees(tenant_id: UUID, selected_employee_id: UUID | None) -> list[Employee]:
+    stmt = select(Employee).where(Employee.tenant_id == tenant_id).order_by(Employee.name.asc(), Employee.id.asc())
+    if selected_employee_id is not None:
+        stmt = stmt.where(Employee.id == selected_employee_id)
+    return list(db.session.execute(stmt).scalars().all())
+
+
+def _attendance_report_events(
+    tenant_id: UUID,
+    start_utc: datetime,
+    end_utc: datetime,
+    selected_employee_id: UUID | None,
+) -> list[tuple[TimeEvent, Employee]]:
+    stmt = visible_events_with_employee_between_stmt(start_utc, end_utc).where(TimeEvent.tenant_id == tenant_id)
+    if selected_employee_id is not None:
+        stmt = stmt.where(TimeEvent.employee_id == selected_employee_id)
+    return list(db.session.execute(stmt).all())
+
+
+def _build_control_report_rows(event_rows: list[tuple[TimeEvent, Employee]]) -> tuple[list[str], list[list[str]]]:
+    headers = [
+        "employee_id",
+        "employee_name",
+        "event_id",
+        "timestamp_utc",
+        "timestamp_local",
+        "event_type",
+        "source",
+        "manual",
+    ]
+    rows: list[list[str]] = []
+    for event, employee in event_rows:
+        rows.append(
+            [
+                str(employee.id),
+                employee.name,
+                str(event.id),
+                _as_utc(event.ts).isoformat(),
+                _to_report_tz(event.ts).strftime("%Y-%m-%d %H:%M:%S"),
+                event.type.value,
+                event.source.value,
+                "yes" if bool((event.meta_json or {}).get("manual")) else "no",
+            ]
+        )
+    return headers, rows
+
+
+def _worked_minutes_from_events(events: list[TimeEvent]) -> int:
+    worked_minutes = 0
+    open_entry: TimeEvent | None = None
+
+    for event in sorted(events, key=lambda row: _as_utc(row.ts)):
+        if event.type == TimeEventType.IN:
+            open_entry = event
+            continue
+        if event.type != TimeEventType.OUT or open_entry is None:
+            continue
+
+        delta = _as_utc(event.ts) - _as_utc(open_entry.ts)
+        worked_minutes += max(0, int(delta.total_seconds() // 60))
+        open_entry = None
+
+    return worked_minutes
+
+
+def _build_executive_report_rows(
+    employees: list[Employee],
+    event_rows: list[tuple[TimeEvent, Employee]],
+) -> tuple[list[str], list[list[str | int]]]:
+    headers = [
+        "employee_id",
+        "employee_name",
+        "days_with_events",
+        "total_events",
+        "in_events",
+        "out_events",
+        "manual_events",
+        "worked_minutes",
+        "worked_hours",
+        "first_event_local",
+        "last_event_local",
+    ]
+    stats_by_employee: dict[UUID, dict[str, object]] = {}
+    events_by_employee_day: dict[UUID, dict[date, list[TimeEvent]]] = {}
+
+    for employee in employees:
+        stats_by_employee[employee.id] = {
+            "employee_name": employee.name,
+            "total_events": 0,
+            "in_events": 0,
+            "out_events": 0,
+            "manual_events": 0,
+            "first_event_local": None,
+            "last_event_local": None,
+        }
+        events_by_employee_day[employee.id] = {}
+
+    for event, employee in event_rows:
+        stats = stats_by_employee.setdefault(
+            employee.id,
+            {
+                "employee_name": employee.name,
+                "total_events": 0,
+                "in_events": 0,
+                "out_events": 0,
+                "manual_events": 0,
+                "first_event_local": None,
+                "last_event_local": None,
+            },
+        )
+        local_ts = _to_report_tz(event.ts)
+        stats["total_events"] = int(stats["total_events"]) + 1
+        if event.type == TimeEventType.IN:
+            stats["in_events"] = int(stats["in_events"]) + 1
+        elif event.type == TimeEventType.OUT:
+            stats["out_events"] = int(stats["out_events"]) + 1
+        if bool((event.meta_json or {}).get("manual")):
+            stats["manual_events"] = int(stats["manual_events"]) + 1
+
+        first_event_local = stats["first_event_local"]
+        last_event_local = stats["last_event_local"]
+        if first_event_local is None or local_ts < first_event_local:
+            stats["first_event_local"] = local_ts
+        if last_event_local is None or local_ts > last_event_local:
+            stats["last_event_local"] = local_ts
+
+        daily_events = events_by_employee_day.setdefault(employee.id, {})
+        daily_events.setdefault(local_ts.date(), []).append(event)
+
+    rows: list[list[str | int]] = []
+    for employee in employees:
+        stats = stats_by_employee.get(employee.id, {})
+        employee_days = events_by_employee_day.get(employee.id, {})
+        worked_minutes = sum(_worked_minutes_from_events(day_events) for day_events in employee_days.values())
+        worked_hours = f"{worked_minutes / 60:.2f}"
+        first_event_local = stats.get("first_event_local")
+        last_event_local = stats.get("last_event_local")
+        rows.append(
+            [
+                str(employee.id),
+                str(stats.get("employee_name") or employee.name),
+                len(employee_days),
+                int(stats.get("total_events") or 0),
+                int(stats.get("in_events") or 0),
+                int(stats.get("out_events") or 0),
+                int(stats.get("manual_events") or 0),
+                worked_minutes,
+                worked_hours,
+                first_event_local.strftime("%Y-%m-%d %H:%M:%S") if first_event_local is not None else "",
+                last_event_local.strftime("%Y-%m-%d %H:%M:%S") if last_event_local is not None else "",
+            ]
+        )
+    return headers, rows
+
+
+def _report_download_filename(
+    report_type: str,
+    output_format: str,
+    date_from: date,
+    date_to: date,
+    selected_employee_id: UUID | None,
+) -> str:
+    employee_suffix = f"_{selected_employee_id}" if selected_employee_id is not None else "_all"
+    ext = REPORT_FORMAT_EXTENSIONS[output_format]
+    return f"{report_type}_report_{date_from.isoformat()}_{date_to.isoformat()}{employee_suffix}.{ext}"
 
 
 @bp.get("/admin/users")
@@ -1534,7 +1742,12 @@ def punch_correction_reject(correction_request_id: UUID):
 @tenant_required
 @export_payroll_required
 def payroll_report():
-    form = DateRangeExportForm()
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = AttendanceReportForm()
+    form.employee_id.choices = [("", "Todos los empleados")] + _employee_choices(tenant_id)
     return render_template("admin/payroll.html", form=form)
 
 
@@ -1543,25 +1756,73 @@ def payroll_report():
 @tenant_required
 @export_payroll_required
 def payroll_export():
-    form = DateRangeExportForm()
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = AttendanceReportForm()
+    form.employee_id.choices = [("", "Todos los empleados")] + _employee_choices(tenant_id)
     if not form.validate_on_submit():
-        flash("Invalid date range.", "danger")
-        return redirect(url_for("admin.payroll_report"))
+        flash("Revisa los datos del reporte.", "danger")
+        return render_template("admin/payroll.html", form=form), 400
 
-    start = datetime.combine(form.date_from.data, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(form.date_to.data, time.max, tzinfo=timezone.utc)
-    stmt = visible_events_with_employee_between_stmt(start, end)
-    rows = db.session.execute(stmt).all()
+    report_type = (form.report_type.data or "").strip().lower()
+    output_format = (form.output_format.data or "").strip().lower()
+    if report_type not in REPORT_TYPE_LABELS:
+        abort(400, description="Tipo de reporte invalido.")
+    if output_format not in REPORT_FORMAT_CONTENT_TYPES:
+        abort(400, description="Formato de reporte invalido.")
 
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(["employee_id", "employee_name", "timestamp", "event_type", "source"])
-    for event, employee in rows:
-        writer.writerow([str(employee.id), employee.name, event.ts.isoformat(), event.type.value, event.source.value])
+    raw_employee_id = (form.employee_id.data or "").strip()
+    selected_employee_id: UUID | None = None
+    if raw_employee_id:
+        try:
+            selected_employee_id = UUID(raw_employee_id)
+        except ValueError:
+            abort(400, description="Empleado invalido.")
 
-    response = make_response(out.getvalue())
-    response.headers["Content-Type"] = "text/csv; charset=utf-8"
-    response.headers["Content-Disposition"] = "attachment; filename=payroll_export.csv"
+    employees = _attendance_report_employees(tenant_id, selected_employee_id)
+    if selected_employee_id is not None and not employees:
+        abort(404, description="Empleado no encontrado para el tenant actual.")
+
+    start_utc, end_utc = _report_window_utc(form.date_from.data, form.date_to.data)
+    event_rows = _attendance_report_events(tenant_id, start_utc, end_utc, selected_employee_id)
+
+    if report_type == "control":
+        headers, rows = _build_control_report_rows(event_rows)
+    else:
+        headers, rows = _build_executive_report_rows(employees, event_rows)
+
+    report_title = f"{REPORT_TYPE_LABELS[report_type]} ({form.date_from.data} a {form.date_to.data})"
+    if output_format == "csv":
+        payload = to_csv_bytes(headers, rows)
+    elif output_format == "xlsx":
+        sheet_name = "ControlHorario" if report_type == "control" else "ResumenEjecutivo"
+        payload = to_xlsx_bytes(headers, rows, sheet_name=sheet_name)
+    elif output_format == "pdf":
+        payload = to_pdf_bytes(report_title, headers, rows)
+    else:
+        payload = to_json_bytes(
+            {
+                "generated_at": datetime.now(timezone.utc),
+                "tenant_id": str(tenant_id),
+                "report_type": report_type,
+                "report_label": REPORT_TYPE_LABELS[report_type],
+                "date_from": form.date_from.data.isoformat(),
+                "date_to": form.date_to.data.isoformat(),
+                "timezone": str(_report_timezone()),
+                "employee_id": str(selected_employee_id) if selected_employee_id is not None else None,
+                "headers": headers,
+                "rows": [dict(zip(headers, row)) for row in rows],
+                "row_count": len(rows),
+            }
+        )
+
+    response = make_response(payload)
+    response.headers["Content-Type"] = REPORT_FORMAT_CONTENT_TYPES[output_format]
+    response.headers["Content-Disposition"] = (
+        f'attachment; filename="{_report_download_filename(report_type, output_format, form.date_from.data, form.date_to.data, selected_employee_id)}"'
+    )
     return response
 
 
