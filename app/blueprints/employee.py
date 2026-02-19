@@ -743,6 +743,9 @@ def _requested_amount_for_policy(
     if policy.unit == LeavePolicyUnit.DAYS:
         return Decimal(max(0, (requested_to - requested_from).days + 1)), None
 
+    if requested_from != requested_to:
+        return None, "Para permisos en horas debes usar el mismo dia en desde/hasta."
+
     if requested_minutes is None or requested_minutes <= 0:
         return None, "Para permisos en horas debes indicar minutos mayores que cero."
     return Decimal(requested_minutes) / Decimal(60), None
@@ -753,18 +756,20 @@ def _has_leave_overlap(
     leave_policy_id: uuid.UUID,
     requested_from: date,
     requested_to: date,
+    *,
+    exclude_request_id: uuid.UUID | None = None,
 ) -> bool:
-    stmt = (
-        select(LeaveRequest.id)
-        .where(
-            LeaveRequest.employee_id == employee_id,
-            LeaveRequest.leave_policy_id == leave_policy_id,
-            LeaveRequest.status.in_([LeaveRequestStatus.REQUESTED, LeaveRequestStatus.APPROVED]),
-            LeaveRequest.date_from <= requested_to,
-            LeaveRequest.date_to >= requested_from,
-        )
-        .limit(1)
-    )
+    where_conditions = [
+        LeaveRequest.employee_id == employee_id,
+        LeaveRequest.leave_policy_id == leave_policy_id,
+        LeaveRequest.status.in_([LeaveRequestStatus.REQUESTED, LeaveRequestStatus.APPROVED]),
+        LeaveRequest.date_from <= requested_to,
+        LeaveRequest.date_to >= requested_from,
+    ]
+    if exclude_request_id is not None:
+        where_conditions.append(LeaveRequest.id != exclude_request_id)
+
+    stmt = select(LeaveRequest.id).where(*where_conditions).limit(1)
     return db.session.execute(stmt).scalar_one_or_none() is not None
 
 
@@ -1585,17 +1590,7 @@ def pause_control():
     )
 
 
-@bp.route("/me/leaves", methods=["GET", "POST"])
-@login_required
-@tenant_required
-@employee_self_service_required
-def me_leaves():
-    employee = _employee_for_current_user()
-    form = LeaveRequestForm()
-    form.type_id.label.text = "Vacaciones / permisos"
-    form.submit.label.text = "Enviar solicitud"
-
-    today_local = datetime.now(_app_timezone()).date()
+def _leave_form_setup(employee: Employee, form: LeaveRequestForm, today_local: date):
     active_shift = _current_shift_for_employee_day(employee, today_local)
     available_policies = _active_leave_policies_for_shift(active_shift, today_local)
     policy_by_id = {str(policy.id): policy for policy in available_policies}
@@ -1610,6 +1605,21 @@ def me_leaves():
         )
         for policy in available_policies
     ]
+    return active_shift, available_policies, policy_by_id
+
+
+@bp.route("/me/leaves", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@employee_self_service_required
+def me_leaves():
+    employee = _employee_for_current_user()
+    form = LeaveRequestForm()
+    form.type_id.label.text = "Vacaciones / permisos"
+    form.submit.label.text = "Enviar solicitud"
+
+    today_local = datetime.now(_app_timezone()).date()
+    active_shift, available_policies, policy_by_id = _leave_form_setup(employee, form, today_local)
 
     if request.method == "POST" and not available_policies:
         flash("No hay vacaciones o permisos definidos para tu turno actual.", "warning")
@@ -1715,6 +1725,171 @@ def me_leaves():
         active_shift=active_shift,
         available_policies=available_policies,
         leave_status_labels=LEAVE_STATUS_LABELS,
+    )
+
+
+@bp.route("/me/leaves/<uuid:leave_request_id>/edit", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@employee_self_service_required
+def leave_edit(leave_request_id: uuid.UUID):
+    employee = _employee_for_current_user()
+    leave_request = db.session.execute(
+        select(LeaveRequest).where(
+            LeaveRequest.id == leave_request_id,
+            LeaveRequest.employee_id == employee.id,
+            LeaveRequest.tenant_id == employee.tenant_id,
+        )
+    ).scalar_one_or_none()
+    if leave_request is None:
+        abort(404)
+    if leave_request.status != LeaveRequestStatus.REQUESTED:
+        abort(409, description="Solo puedes editar solicitudes pendientes.")
+
+    form = LeaveRequestForm()
+    form.type_id.label.text = "Vacaciones / permisos"
+    form.submit.label.text = "Guardar cambios"
+
+    today_local = datetime.now(_app_timezone()).date()
+    active_shift, available_policies, policy_by_id = _leave_form_setup(employee, form, today_local)
+
+    if leave_request.leave_policy_id is not None and str(leave_request.leave_policy_id) not in policy_by_id:
+        existing_policy = db.session.get(ShiftLeavePolicy, leave_request.leave_policy_id)
+        if existing_policy is not None:
+            policy_by_id[str(existing_policy.id)] = existing_policy
+            form.type_id.choices.append(
+                (
+                    str(existing_policy.id),
+                    (
+                        f"{existing_policy.name} - {_format_decimal_amount(Decimal(existing_policy.amount))} "
+                        f"{LEAVE_POLICY_UNIT_LABELS.get(existing_policy.unit, 'dias')} "
+                        f"({existing_policy.valid_from.isoformat()} a {existing_policy.valid_to.isoformat()}) "
+                        "(no activa)"
+                    ),
+                )
+            )
+
+    if request.method == "GET":
+        if leave_request.leave_policy_id is not None:
+            form.type_id.data = str(leave_request.leave_policy_id)
+        form.date_from.data = leave_request.date_from
+        form.date_to.data = leave_request.date_to
+        form.minutes.data = leave_request.minutes
+        form.reason.data = leave_request.reason
+    elif form.validate_on_submit():
+        selected_policy = policy_by_id.get(form.type_id.data)
+        if selected_policy is None:
+            flash("Vacaciones o permiso invalido para tu turno actual.", "danger")
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        attachment_name, attachment_mime, attachment_blob, attachment_error = _extract_optional_attachment()
+        if attachment_error is not None:
+            flash(attachment_error, "danger")
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        requested_from = form.date_from.data
+        requested_to = form.date_to.data
+        if requested_from < selected_policy.valid_from or requested_to > selected_policy.valid_to:
+            flash("Las fechas solicitadas estan fuera del rango permitido para esta bolsa.", "danger")
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        requested_amount, amount_error = _requested_amount_for_policy(
+            selected_policy,
+            requested_from,
+            requested_to,
+            form.minutes.data,
+        )
+        if amount_error is not None or requested_amount is None:
+            flash(amount_error or "Importe solicitado invalido.", "danger")
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        if _has_leave_overlap(
+            employee.id,
+            selected_policy.id,
+            requested_from,
+            requested_to,
+            exclude_request_id=leave_request.id,
+        ):
+            flash(
+                "Ya existe una solicitud pendiente o aprobada que se solapa con estas fechas.",
+                "danger",
+            )
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        consumption = _policy_consumption_by_employee(employee.id, [selected_policy])
+        totals = consumption.get(selected_policy.id, {"approved": Decimal("0"), "pending": Decimal("0")})
+        used = totals["approved"] + totals["pending"]
+        if leave_request.leave_policy_id == selected_policy.id:
+            current_amount, _ = _requested_amount_for_policy(
+                selected_policy,
+                leave_request.date_from,
+                leave_request.date_to,
+                leave_request.minutes,
+            )
+            if current_amount is not None:
+                used -= current_amount
+        total_amount = Decimal(selected_policy.amount)
+        if used + requested_amount > total_amount + Decimal("0.000001"):
+            flash("No hay saldo suficiente en esta bolsa para esa solicitud.", "danger")
+            return redirect(url_for("employee.leave_edit", leave_request_id=leave_request.id))
+
+        before_payload = {
+            "type_id": str(leave_request.type_id),
+            "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
+            "date_from": leave_request.date_from.isoformat(),
+            "date_to": leave_request.date_to.isoformat(),
+            "reason": leave_request.reason,
+            "minutes": leave_request.minutes,
+            "attachment_name": leave_request.attachment_name,
+        }
+
+        leave_request.type_id = selected_policy.leave_type_id
+        leave_request.leave_policy_id = selected_policy.id
+        leave_request.date_from = requested_from
+        leave_request.date_to = requested_to
+        leave_request.reason = form.reason.data.strip()
+        leave_request.minutes = form.minutes.data if selected_policy.unit == LeavePolicyUnit.HOURS else None
+        if attachment_blob is not None:
+            leave_request.attachment_name = attachment_name
+            leave_request.attachment_mime = attachment_mime
+            leave_request.attachment_blob = attachment_blob
+        elif request.form.get("remove_attachment") == "1":
+            leave_request.attachment_name = None
+            leave_request.attachment_mime = None
+            leave_request.attachment_blob = None
+
+        after_payload = {
+            "type_id": str(leave_request.type_id),
+            "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
+            "date_from": leave_request.date_from.isoformat(),
+            "date_to": leave_request.date_to.isoformat(),
+            "reason": leave_request.reason,
+            "minutes": leave_request.minutes,
+            "attachment_name": leave_request.attachment_name,
+        }
+        log_audit(
+            action="LEAVE_UPDATED",
+            entity_type="leave_requests",
+            entity_id=leave_request.id,
+            payload={
+                "employee_id": str(employee.id),
+                "before": before_payload,
+                "after": after_payload,
+            },
+        )
+        db.session.commit()
+        flash("Solicitud actualizada.", "success")
+        return redirect(url_for("employee.me_leaves"))
+    elif request.method == "POST":
+        flash("Solicitud invalida. Revisa motivo, fechas y minutos.", "danger")
+
+    return render_template(
+        "employee/leave_edit.html",
+        form=form,
+        employee=employee,
+        leave_request=leave_request,
+        active_shift=active_shift,
+        available_policies=available_policies,
     )
 
 

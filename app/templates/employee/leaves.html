@@ -10,6 +10,10 @@
     {% else %}
       <p class="muted" style="margin-top:-.35rem;">Sin turno activo.</p>
     {% endif %}
+    <p class="muted" style="margin-top:.1rem;">
+      Permisos por horas: disponibles si la bolsa es de horas (usa mismo dia en desde/hasta y minutos).<br>
+      MVP actual: corte de dia a las 00:00 en la zona horaria configurada; no soporta jornadas nocturnas.
+    </p>
     <form method="post" enctype="multipart/form-data">
       {{ form.hidden_tag() }}
       <label for="{{ form.type_id.id }}">{{ form.type_id.label.text }}</label>
@@ -68,6 +72,7 @@
             </td>
             <td>
               {% if leave_request.status.value == "REQUESTED" %}
+                <a class="secondary" style="display:inline-flex;align-items:center;padding:.4rem .6rem;border-radius:10px;" href="{{ url_for('employee.leave_edit', leave_request_id=leave_request.id) }}">Editar</a>
                 <form class="inline" method="post" action="{{ url_for('employee.leave_cancel', leave_request_id=leave_request.id) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button type="submit" class="danger">Cancelar</button>

@@ -127,13 +127,23 @@ Flujo funcional implementado para vacaciones/permisos:
 - `POST /me/leaves` valida:
   - Rango de fechas dentro de la vigencia de la bolsa.
   - Reglas por unidad (`DAYS` y `HOURS`).
+  - En `HOURS`, exige mismo dia en `desde/hasta` y minutos > 0.
   - Saldo disponible considerando aprobadas y pendientes.
   - Solapes con solicitudes activas de la misma bolsa.
+- `GET|POST /me/leaves/<id>/edit` permite editar solo solicitudes propias en `REQUESTED`.
 - `POST /me/leaves/<id>/cancel` permite cancelar solo solicitudes propias en `REQUESTED`.
 - `POST /admin/approvals/<id>/approve|reject` decide solicitudes del tenant activo y devuelve conflicto si ya estaban decididas.
+- Solicitudes de ausencia y rectificacion admiten adjunto opcional (`PDF/JPG/PNG/WEBP`, max 5MB).
+- Managers/Admin pueden registrar comentario de decision al aprobar/rechazar.
 - Auditoria en `audit_log` para `LEAVE_REQUESTED`, `LEAVE_APPROVED`, `LEAVE_REJECTED`, `LEAVE_CANCELLED`.
 
 Especificacion completa: `docs/spec-leaves-mvp.md`
+
+### Limites MVP (explícitos)
+
+- Corte diario: `00:00` en `APP_TIMEZONE`.
+- Jornadas nocturnas (turnos que cruzan medianoche): **no soportadas** en este MVP.
+- Si necesitas un MVP ultraligero: ausencias de dia completo + vista mensual + rectificaciones con validacion.
 
 ### Uso diario
 

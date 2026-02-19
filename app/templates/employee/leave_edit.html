@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block content %}
+  {% include "employee/_sections.html" %}
+  <section class="card">
+    <h1>Editar solicitud de vacaciones/permisos</h1>
+    <p class="muted">{{ employee.name }}</p>
+    {% if active_shift %}
+      <p class="muted" style="margin-top:-.35rem;">Turno activo: {{ active_shift.name }}</p>
+    {% else %}
+      <p class="muted" style="margin-top:-.35rem;">Sin turno activo.</p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.type_id.id }}">{{ form.type_id.label.text }}</label>
+      {{ form.type_id() }}
+      <label for="{{ form.date_from.id }}">Desde</label>
+      {{ form.date_from() }}
+      <label for="{{ form.date_to.id }}">Hasta</label>
+      {{ form.date_to() }}
+      <label for="{{ form.reason.id }}">Motivo</label>
+      {{ form.reason(rows="3") }}
+      <label for="{{ form.minutes.id }}">Minutos</label>
+      {{ form.minutes() }}
+
+      <label for="{{ form.attachment.id }}">Nuevo adjunto (PDF o imagen, max. 5MB)</label>
+      {{ form.attachment(accept=".pdf,.jpg,.jpeg,.png,.webp") }}
+      {% if leave_request.attachment_name %}
+        <p class="muted" style="margin-top:.4rem;">
+          Adjunto actual:
+          <a href="{{ url_for('employee.leave_attachment_download', leave_request_id=leave_request.id) }}">{{ leave_request.attachment_name }}</a>
+        </p>
+        <label style="display:flex;align-items:center;gap:.4rem;font-weight:500;margin-top:.2rem;">
+          <input type="checkbox" name="remove_attachment" value="1">
+          Eliminar adjunto actual
+        </label>
+      {% endif %}
+
+      <div class="actions" style="margin-top:1rem;">
+        <button type="submit">Guardar cambios</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

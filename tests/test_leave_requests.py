@@ -229,6 +229,34 @@ def test_me_leaves_requires_minutes_for_hour_policies(client, app):
     assert "Para permisos en horas debes indicar minutos mayores que cero." in html
 
 
+def test_me_leaves_rejects_multi_day_hour_policy_request(client, app):
+    response = _login_owner(client)
+    assert response.status_code == 302
+    _select_tenant(client, "tenant-a")
+
+    with app.app_context():
+        _, _, policy = _create_leave_policy_for_owner(
+            unit=LeavePolicyUnit.HOURS,
+            amount=Decimal("40"),
+        )
+        policy_id = policy.id
+
+    submit = client.post(
+        "/me/leaves",
+        data={
+            "type_id": str(policy_id),
+            "date_from": "2026-02-10",
+            "date_to": "2026-02-11",
+            "reason": "Permiso por horas para dos dias distintos.",
+            "minutes": "120",
+        },
+        follow_redirects=True,
+    )
+    assert submit.status_code == 200
+    html = submit.get_data(as_text=True)
+    assert "Para permisos en horas debes usar el mismo dia en desde/hasta." in html
+
+
 def test_me_leaves_rejects_dates_outside_policy_range(client, app):
     response = _login_owner(client)
     assert response.status_code == 302
@@ -383,6 +411,98 @@ def test_me_leave_cancel_changes_status_and_logs_audit(client, app):
             select(AuditLog).where(AuditLog.action == "LEAVE_CANCELLED").order_by(AuditLog.ts.desc())
         ).scalar_one()
         assert audit.payload_json["status"] == LeaveRequestStatus.CANCELLED.value
+
+
+def test_me_leave_edit_updates_pending_request(client, app):
+    response = _login_owner(client)
+    assert response.status_code == 302
+    _select_tenant(client, "tenant-a")
+
+    with app.app_context():
+        employee, leave_type, policy = _create_leave_policy_for_owner()
+        leave_request = LeaveRequest(
+            tenant_id=employee.tenant_id,
+            employee_id=employee.id,
+            type_id=leave_type.id,
+            leave_policy_id=policy.id,
+            date_from=date(2026, 2, 20),
+            date_to=date(2026, 2, 20),
+            reason="Version inicial del motivo de ausencia.",
+            minutes=None,
+            status=LeaveRequestStatus.REQUESTED,
+        )
+        db.session.add(leave_request)
+        db.session.commit()
+        leave_request_id = leave_request.id
+        policy_id = policy.id
+
+    edit = client.post(
+        f"/me/leaves/{leave_request_id}/edit",
+        data={
+            "type_id": str(policy_id),
+            "date_from": "2026-02-21",
+            "date_to": "2026-02-21",
+            "reason": "Motivo actualizado tras cambiar la cita.",
+            "minutes": "",
+        },
+        follow_redirects=True,
+    )
+    assert edit.status_code == 200
+    html = edit.get_data(as_text=True)
+    assert "Solicitud actualizada." in html
+
+    with app.app_context():
+        refreshed = db.session.get(LeaveRequest, leave_request_id)
+        assert refreshed is not None
+        assert refreshed.date_from == date(2026, 2, 21)
+        assert refreshed.date_to == date(2026, 2, 21)
+        assert refreshed.reason == "Motivo actualizado tras cambiar la cita."
+        assert refreshed.status == LeaveRequestStatus.REQUESTED
+
+        audit = db.session.execute(
+            select(AuditLog).where(AuditLog.action == "LEAVE_UPDATED").order_by(AuditLog.ts.desc())
+        ).scalar_one()
+        assert audit.payload_json["employee_id"] == str(refreshed.employee_id)
+        assert audit.payload_json["before"]["date_from"] == "2026-02-20"
+        assert audit.payload_json["after"]["date_from"] == "2026-02-21"
+
+
+def test_me_leave_edit_rejects_already_decided_requests(client, app):
+    response = _login_owner(client)
+    assert response.status_code == 302
+    _select_tenant(client, "tenant-a")
+
+    with app.app_context():
+        employee, leave_type, policy = _create_leave_policy_for_owner()
+        leave_request = LeaveRequest(
+            tenant_id=employee.tenant_id,
+            employee_id=employee.id,
+            type_id=leave_type.id,
+            leave_policy_id=policy.id,
+            date_from=date(2026, 2, 20),
+            date_to=date(2026, 2, 21),
+            reason="Solicitud ya aprobada.",
+            minutes=None,
+            status=LeaveRequestStatus.APPROVED,
+        )
+        db.session.add(leave_request)
+        db.session.commit()
+        leave_request_id = leave_request.id
+
+    edit = client.post(
+        f"/me/leaves/{leave_request_id}/edit",
+        data={
+            "type_id": "",
+            "date_from": "2026-02-22",
+            "date_to": "2026-02-22",
+            "reason": "Intento editar una solicitud ya decidida.",
+            "minutes": "",
+        },
+        follow_redirects=False,
+    )
+    assert edit.status_code == 409
+    html = edit.get_data(as_text=True)
+    assert "Solo puedes editar solicitudes pendientes." in html
 
 
 def test_me_leave_cancel_rejects_already_decided_requests(client, app):
