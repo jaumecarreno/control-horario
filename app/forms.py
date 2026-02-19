@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import UUID
 
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, DateField, DecimalField, IntegerField, PasswordField, SelectField, StringField, SubmitField
@@ -57,6 +58,42 @@ class UserCreateForm(FlaskForm):
     employee_id = SelectField("Employee", choices=[], validators=[Optional()], coerce=str)
     active = BooleanField("Active", default=True)
     submit = SubmitField("Create user")
+
+
+class UserEditForm(FlaskForm):
+    role = SelectField(
+        "Role",
+        choices=[
+            ("OWNER", "Owner"),
+            ("ADMIN", "Admin"),
+            ("MANAGER", "Manager"),
+            ("EMPLOYEE", "Employee"),
+        ],
+        validators=[DataRequired()],
+    )
+    employee_id = SelectField("Employee", choices=[], validators=[Optional()], coerce=str)
+    active = BooleanField("Active", default=True)
+    submit = SubmitField("Guardar cambios")
+
+    def validate_role(self, field: SelectField) -> None:
+        allowed_roles = {"OWNER", "ADMIN", "MANAGER", "EMPLOYEE"}
+        if field.data not in allowed_roles:
+            raise ValidationError("Rol invalido.")
+
+    def validate_employee_id(self, field: SelectField) -> None:
+        role = self.role.data
+        employee_id = (field.data or "").strip()
+        if role == "EMPLOYEE":
+            if not employee_id:
+                raise ValidationError("Debe seleccionar un empleado para el rol EMPLOYEE.")
+            try:
+                UUID(employee_id)
+            except ValueError as exc:
+                raise ValidationError("Empleado invalido para el tenant actual.") from exc
+            return
+
+        if employee_id:
+            raise ValidationError("Los roles admin/manager/owner no deben tener empleado asociado.")
 
 
 class LeaveRequestForm(FlaskForm):

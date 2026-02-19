@@ -12,6 +12,7 @@
           <th>Role</th>
           <th>Employee</th>
           <th>Active</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -21,9 +22,10 @@
             <td>{{ membership.role.value if membership.role else '-' }}</td>
             <td>{{ employee.name if employee else '-' }}</td>
             <td>{{ 'Yes' if user.is_active else 'No' }}</td>
+            <td><a href="{{ url_for('admin.users_edit', user_id=user.id) }}">Edit</a></td>
           </tr>
         {% else %}
-          <tr><td colspan="4">No users found.</td></tr>
+          <tr><td colspan="5">No users found.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -15,7 +15,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.extensions import db
-from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm, UserCreateForm
+from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm, UserCreateForm, UserEditForm
 from app.models import (
     Employee,
     EmployeeShiftAssignment,
@@ -350,6 +350,39 @@ def _employee_choices(tenant_id: UUID) -> list[tuple[str, str]]:
     return [(str(employee.id), f"{employee.name} ({employee.email or '-'})") for employee in rows]
 
 
+def _tenant_admin_count(tenant_id: UUID) -> int:
+    return int(
+        db.session.execute(
+            select(func.count(Membership.id)).where(
+                Membership.tenant_id == tenant_id,
+                Membership.role.in_((MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER)),
+            )
+        ).scalar_one()
+    )
+
+
+def _can_manage_owner_transition(actor_role: MembershipRole, current_role: MembershipRole, new_role: MembershipRole) -> bool:
+    owner_change = current_role is MembershipRole.OWNER or new_role is MembershipRole.OWNER
+    if not owner_change:
+        return True
+    return actor_role is MembershipRole.OWNER
+
+
+def _would_remove_last_admin_access(tenant_id: UUID, target_user_id: UUID, new_role: MembershipRole) -> bool:
+    if new_role in {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}:
+        return False
+
+    membership = db.session.execute(
+        select(Membership).where(Membership.tenant_id == tenant_id, Membership.user_id == target_user_id)
+    ).scalar_one_or_none()
+    if membership is None:
+        return False
+    if membership.role not in {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}:
+        return False
+
+    return _tenant_admin_count(tenant_id) <= 1
+
+
 @bp.get("/admin/users")
 @login_required
 @tenant_required
@@ -445,6 +478,118 @@ def users_new():
         return redirect(url_for("admin.users_list"))
 
     return render_template("admin/user_new.html", form=form)
+
+
+@bp.route("/admin/users/<uuid:user_id>/edit", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def users_edit(user_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    row = db.session.execute(
+        select(Membership, User)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.tenant_id == tenant_id, Membership.user_id == user_id)
+    ).one_or_none()
+    if row is None:
+        abort(404)
+    membership, user = row
+
+    actor_membership = db.session.execute(
+        select(Membership).where(Membership.tenant_id == tenant_id, Membership.user_id == UUID(current_user.get_id()))
+    ).scalar_one_or_none()
+    if actor_membership is None:
+        abort(403, description="Insufficient permissions.")
+
+    form = UserEditForm()
+    form.employee_id.choices = [("", "Sin empleado")] + _employee_choices(tenant_id)
+
+    if request.method == "GET":
+        form.role.data = membership.role.value
+        form.employee_id.data = str(membership.employee_id) if membership.employee_id else ""
+        form.active.data = user.is_active
+
+    if form.validate_on_submit():
+        try:
+            new_role = MembershipRole(form.role.data)
+        except ValueError:
+            flash("Rol invalido.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        if not _can_manage_owner_transition(actor_membership.role, membership.role, new_role):
+            flash("Solo OWNER puede cambiar asignaciones de OWNER.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        selected_employee_id = (form.employee_id.data or "").strip()
+        employee_id = None
+        if new_role is MembershipRole.EMPLOYEE:
+            try:
+                parsed_employee_id = UUID(selected_employee_id)
+            except ValueError:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_edit.html", form=form, user=user)
+            employee = db.session.execute(
+                select(Employee).where(Employee.id == parsed_employee_id, Employee.tenant_id == tenant_id)
+            ).scalar_one_or_none()
+            if employee is None:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_edit.html", form=form, user=user)
+            employee_id = employee.id
+
+        if (
+            membership.user_id == UUID(current_user.get_id())
+            and _would_remove_last_admin_access(tenant_id, membership.user_id, new_role)
+        ):
+            flash("No puedes quitar tu ultimo acceso administrativo del tenant.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        previous_role = membership.role
+        previous_employee_id = membership.employee_id
+        previous_status = user.is_active
+
+        membership.role = new_role
+        membership.employee_id = employee_id
+        user.is_active = bool(form.active.data)
+
+        db.session.flush()
+
+        if previous_role != membership.role or previous_employee_id != membership.employee_id:
+            log_audit(
+                action="USER_ROLE_CHANGED",
+                entity_type="memberships",
+                entity_id=membership.id,
+                payload={
+                    "user_id": str(user.id),
+                    "before": {
+                        "role": previous_role.value,
+                        "employee_id": str(previous_employee_id) if previous_employee_id else None,
+                    },
+                    "after": {
+                        "role": membership.role.value,
+                        "employee_id": str(membership.employee_id) if membership.employee_id else None,
+                    },
+                },
+            )
+
+        if previous_status != user.is_active:
+            log_audit(
+                action="USER_STATUS_CHANGED",
+                entity_type="users",
+                entity_id=user.id,
+                payload={
+                    "before": {"is_active": previous_status},
+                    "after": {"is_active": user.is_active},
+                },
+            )
+
+        db.session.commit()
+        flash("Usuario actualizado.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_edit.html", form=form, user=user)
 
 
 @bp.get("/admin/employees")
