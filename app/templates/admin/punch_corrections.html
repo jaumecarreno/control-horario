@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Rectificaciones de fichaje</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Empleado</th>
+          <th>Fichaje original</th>
+          <th>Nuevo fichaje</th>
+          <th>Motivo</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for correction_request, employee, source_event in pending_rows %}
+          <tr>
+            <td>{{ employee.name }}</td>
+            <td>{{ source_event.ts }} {{ source_event.type.value }}</td>
+            <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
+            <td>{{ correction_request.reason }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('admin.punch_correction_approve', correction_request_id=correction_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit">Aprobar</button>
+              </form>
+              <form class="inline" method="post" action="{{ url_for('admin.punch_correction_reject', correction_request_id=correction_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="danger">Rechazar</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No hay rectificaciones pendientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Historico reciente</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Creada</th>
+          <th>Empleado</th>
+          <th>Fichaje original</th>
+          <th>Nuevo fichaje</th>
+          <th>Estado</th>
+          <th>Motivo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for correction_request, employee, source_event in history_rows %}
+          <tr>
+            <td>{{ correction_request.created_at }}</td>
+            <td>{{ employee.name }}</td>
+            <td>{{ source_event.ts }} {{ source_event.type.value }}</td>
+            <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
+            <td>{{ punch_correction_status_labels.get(correction_request.status, correction_request.status.value) }}</td>
+            <td>{{ correction_request.reason }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">Sin historico todavia.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

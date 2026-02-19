@@ -29,6 +29,10 @@ def can_approve_leaves(role: MembershipRole) -> bool:
     return role in ADMIN_ROLES
 
 
+def can_approve_punch_corrections(role: MembershipRole) -> bool:
+    return role in ADMIN_ROLES
+
+
 def can_export_payroll(role: MembershipRole) -> bool:
     return role in ADMIN_ROLES
 
@@ -70,6 +74,10 @@ manage_users_required = permission_required("manage_users", _membership_role_pre
 manage_employees_required = permission_required("manage_employees", _membership_role_predicate(can_manage_employees))
 manage_shifts_required = permission_required("manage_shifts", _membership_role_predicate(can_manage_shifts))
 approve_leaves_required = permission_required("approve_leaves", _membership_role_predicate(can_approve_leaves))
+approve_punch_corrections_required = permission_required(
+    "approve_punch_corrections",
+    _membership_role_predicate(can_approve_punch_corrections),
+)
 export_payroll_required = permission_required("export_payroll", _membership_role_predicate(can_export_payroll))
 view_adjustments_required = permission_required("view_adjustments", _membership_role_predicate(can_view_adjustments))
 employee_self_service_required = permission_required("employee_self_service", can_access_employee_self_service)

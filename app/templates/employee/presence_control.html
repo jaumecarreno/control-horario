@@ -72,20 +72,171 @@
           <th>Tipo</th>
           <th>Origen</th>
           <th>Modo</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
         {% for event in recent_events %}
+          {% set local_ts = to_app_tz(event.ts) %}
           <tr>
-            <td>{{ to_app_tz(event.ts).strftime('%d/%m/%Y %H:%M:%S') }}</td>
+            <td>{{ local_ts.strftime('%d/%m/%Y %H:%M:%S') }}</td>
             <td>{{ event.type.value }}</td>
             <td>{{ event.source.value }}</td>
             <td>{% if (event.meta_json or {}).get('manual') %}<strong>Manual</strong>{% else %}Normal{% endif %}</td>
+            <td>
+              {% if event.type.value in ['IN', 'OUT'] %}
+                <button
+                  type="button"
+                  class="secondary open-correction-modal"
+                  data-event-id="{{ event.id }}"
+                  data-event-date="{{ local_ts.strftime('%Y-%m-%d') }}"
+                  data-event-hour="{{ local_ts.strftime('%H') }}"
+                  data-event-minute="{{ local_ts.strftime('%M') }}"
+                  data-event-kind="{{ event.type.value }}"
+                  data-event-label="{{ local_ts.strftime('%d/%m/%Y %H:%M:%S') }} {{ event.type.value }}"
+                >
+                  Rectificar
+                </button>
+              {% else %}
+                -
+              {% endif %}
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="4">Sin registros todavia.</td></tr>
+          <tr><td colspan="5">Sin registros todavia.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Mis solicitudes de rectificacion</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Creada</th>
+          <th>Fichaje original</th>
+          <th>Nuevo fichaje</th>
+          <th>Estado</th>
+          <th>Motivo</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for correction_request, source_event in correction_rows %}
+          <tr>
+            <td>{{ to_app_tz(correction_request.created_at).strftime('%d/%m/%Y %H:%M') }}</td>
+            <td>{{ to_app_tz(source_event.ts).strftime('%d/%m/%Y %H:%M') }} {{ source_event.type.value }}</td>
+            <td>{{ to_app_tz(correction_request.requested_ts).strftime('%d/%m/%Y %H:%M') }} {{ correction_request.requested_type.value }}</td>
+            <td>{{ punch_correction_status_labels.get(correction_request.status, correction_request.status.value) }}</td>
+            <td>{{ correction_request.reason }}</td>
+            <td>
+              {% if correction_request.status.value == "REQUESTED" %}
+                <form class="inline" method="post" action="{{ url_for('employee.punch_correction_request_cancel', correction_request_id=correction_request.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="return_month" value="{{ selected_month }}">
+                  <button type="submit" class="danger">Cancelar</button>
+                </form>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6">Aun no hay solicitudes de rectificacion.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <div id="punch-correction-modal" class="report-modal" aria-hidden="true">
+    <div class="report-modal-content" role="dialog" aria-modal="true" aria-labelledby="punch-correction-modal-title">
+      <div class="report-modal-header">
+        <h3 id="punch-correction-modal-title" style="margin: 0;">Solicitar rectificacion</h3>
+        <button type="button" class="close-modal-btn" id="close-punch-correction-modal" aria-label="Cerrar ventana">x</button>
+      </div>
+      <p class="muted" style="margin: .5rem 0 1rem;">Fichaje original: <strong id="punch-correction-source-label">-</strong></p>
+
+      <form method="post" action="{{ url_for('employee.punch_correction_request_create') }}">
+        {{ punch_correction_form.hidden_tag() }}
+        <input type="hidden" name="return_month" value="{{ selected_month }}">
+        {{ punch_correction_form.source_event_id(id='punch-correction-source-event-id', type='hidden') }}
+
+        <label for="{{ punch_correction_form.requested_date.id }}">Nueva fecha</label>
+        {{ punch_correction_form.requested_date(id='punch-correction-requested-date') }}
+
+        <div class="actions" style="margin-top: .5rem;">
+          <div>
+            <label for="{{ punch_correction_form.requested_hour.id }}">Hora</label>
+            {{ punch_correction_form.requested_hour(id='punch-correction-requested-hour', min='0', max='23') }}
+          </div>
+          <div>
+            <label for="{{ punch_correction_form.requested_minute.id }}">Minutos</label>
+            {{ punch_correction_form.requested_minute(id='punch-correction-requested-minute', min='0', max='59') }}
+          </div>
+        </div>
+
+        <label for="{{ punch_correction_form.requested_kind.id }}">Nuevo tipo</label>
+        {{ punch_correction_form.requested_kind(id='punch-correction-requested-kind') }}
+
+        <label for="{{ punch_correction_form.reason.id }}">Motivo</label>
+        {{ punch_correction_form.reason(id='punch-correction-reason', rows='3') }}
+
+        <div class="incident-actions">
+          <button type="button" class="incident-cancel" id="cancel-punch-correction-modal">Cancelar</button>
+          <button type="submit" class="incident-send">Enviar solicitud</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const modal = document.getElementById("punch-correction-modal");
+      const sourceEventIdInput = document.getElementById("punch-correction-source-event-id");
+      const sourceLabel = document.getElementById("punch-correction-source-label");
+      const requestedDateInput = document.getElementById("punch-correction-requested-date");
+      const requestedHourInput = document.getElementById("punch-correction-requested-hour");
+      const requestedMinuteInput = document.getElementById("punch-correction-requested-minute");
+      const requestedKindInput = document.getElementById("punch-correction-requested-kind");
+      const reasonInput = document.getElementById("punch-correction-reason");
+
+      function openModal() {
+        if (!modal) return;
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+      }
+
+      function closeModal() {
+        if (!modal) return;
+        modal.classList.remove("is-open");
+        modal.setAttribute("aria-hidden", "true");
+      }
+
+      document.querySelectorAll(".open-correction-modal").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (sourceEventIdInput) sourceEventIdInput.value = button.dataset.eventId || "";
+          if (sourceLabel) sourceLabel.textContent = button.dataset.eventLabel || "-";
+          if (requestedDateInput) requestedDateInput.value = button.dataset.eventDate || "";
+          if (requestedHourInput) requestedHourInput.value = button.dataset.eventHour || "";
+          if (requestedMinuteInput) requestedMinuteInput.value = button.dataset.eventMinute || "";
+          if (requestedKindInput) requestedKindInput.value = button.dataset.eventKind || "IN";
+          if (reasonInput) reasonInput.value = "";
+          openModal();
+        });
+      });
+
+      const closeButton = document.getElementById("close-punch-correction-modal");
+      if (closeButton) closeButton.addEventListener("click", closeModal);
+
+      const cancelButton = document.getElementById("cancel-punch-correction-modal");
+      if (cancelButton) cancelButton.addEventListener("click", closeModal);
+
+      if (modal) {
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) closeModal();
+        });
+      }
+    })();
+  </script>
 {% endblock %}

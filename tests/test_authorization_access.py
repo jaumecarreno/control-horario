@@ -96,6 +96,16 @@ def test_approvals_area_requires_approve_leaves_permission(client, role_access_c
     )
 
 
+def test_punch_corrections_area_requires_approval_permission(client, role_access_context):
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="GET",
+        path="/admin/punch-corrections",
+        allowed_roles={MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER},
+    )
+
+
 def test_payroll_export_requires_export_permission(client, role_access_context):
     _expect_access_for_roles(
         client,
@@ -126,3 +136,22 @@ def test_manual_punch_requires_employee_profile(client, role_access_context):
         employee_user = db.session.execute(select(User).where(User.email == role_access_context["emails"][MembershipRole.EMPLOYEE])).scalar_one()
         membership = db.session.execute(select(Membership).where(Membership.user_id == employee_user.id)).scalar_one()
         assert membership.employee_id is not None
+
+
+def test_punch_correction_create_requires_employee_profile(client, role_access_context):
+    data = {
+        "source_event_id": str(uuid.uuid4()),
+        "requested_date": "2026-02-10",
+        "requested_hour": "10",
+        "requested_minute": "15",
+        "requested_kind": "IN",
+        "reason": "Olvide fichar correctamente al iniciar la jornada.",
+    }
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="POST",
+        path="/me/punch-corrections",
+        data=data,
+        allowed_roles={MembershipRole.EMPLOYEE},
+    )

@@ -24,6 +24,15 @@
 
       <hr style="margin: 1rem 0; border-color: var(--border); border-width: 1px 0 0;">
 
+      <h2 style="margin-top:0;">Aprobador de rectificaciones</h2>
+      <label for="{{ form.punch_approver_user_id.id }}">Usuario aprobador</label>
+      {{ form.punch_approver_user_id() }}
+      <p class="muted" style="margin-top:.35rem;">
+        Si no se asigna uno, cualquier OWNER/ADMIN/MANAGER podra aprobar o rechazar.
+      </p>
+
+      <hr style="margin: 1rem 0; border-color: var(--border); border-width: 1px 0 0;">
+
       <h2 style="margin-top:0;">Cambio de turno</h2>
       <label for="{{ form.assignment_shift_id.id }}">Nuevo turno (opcional)</label>
       {{ form.assignment_shift_id() }}

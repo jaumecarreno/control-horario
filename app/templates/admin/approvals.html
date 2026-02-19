@@ -38,4 +38,41 @@
       </tbody>
     </table>
   </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Rectificaciones pendientes</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Empleado</th>
+          <th>Fichaje original</th>
+          <th>Nuevo fichaje</th>
+          <th>Motivo</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for correction_request, employee, source_event in correction_rows %}
+          <tr>
+            <td>{{ employee.name }}</td>
+            <td>{{ source_event.ts }} {{ source_event.type.value }}</td>
+            <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
+            <td>{{ correction_request.reason }}</td>
+            <td>
+              <form class="inline" method="post" action="{{ url_for('admin.punch_correction_approve', correction_request_id=correction_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit">Aprobar</button>
+              </form>
+              <form class="inline" method="post" action="{{ url_for('admin.punch_correction_reject', correction_request_id=correction_request.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="danger">Rechazar</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">No hay rectificaciones pendientes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
 {% endblock %}

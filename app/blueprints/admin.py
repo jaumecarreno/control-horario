@@ -16,6 +16,7 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from app.audit import log_audit
 from app.authorization import (
     approve_leaves_required,
+    approve_punch_corrections_required,
     export_payroll_required,
     manage_employees_required,
     manage_shifts_required,
@@ -37,6 +38,8 @@ from app.models import (
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
     LeavePolicyUnit,
+    PunchCorrectionRequest,
+    PunchCorrectionStatus,
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
@@ -47,9 +50,12 @@ from app.models import (
     ShiftLeavePolicy,
     TimeAdjustment,
     TimeEvent,
+    TimeEventSource,
+    TimeEventSupersession,
 )
 from app.security import hash_secret
 from app.tenant import get_active_tenant_id, tenant_required
+from app.time_events import visible_events_with_employee_between_stmt
 
 
 bp = Blueprint("admin", __name__)
@@ -68,6 +74,12 @@ LEAVE_POLICY_UNIT_CHOICES = [
     (LeavePolicyUnit.DAYS.value, LEAVE_POLICY_UNIT_LABELS[LeavePolicyUnit.DAYS]),
     (LeavePolicyUnit.HOURS.value, LEAVE_POLICY_UNIT_LABELS[LeavePolicyUnit.HOURS]),
 ]
+PUNCH_CORRECTION_STATUS_LABELS = {
+    PunchCorrectionStatus.REQUESTED: "Pendiente",
+    PunchCorrectionStatus.APPROVED: "Aprobada",
+    PunchCorrectionStatus.REJECTED: "Rechazada",
+    PunchCorrectionStatus.CANCELLED: "Cancelada",
+}
 
 
 def _policy_default_dates(reference_day: date | None = None) -> tuple[str, str]:
@@ -363,6 +375,24 @@ def _current_shift_names_by_employee(employee_ids: list[UUID], today: date) -> d
 def _employee_choices(tenant_id: UUID) -> list[tuple[str, str]]:
     rows = list(db.session.execute(select(Employee).where(Employee.tenant_id == tenant_id).order_by(Employee.name.asc())).scalars().all())
     return [(str(employee.id), f"{employee.name} ({employee.email or '-'})") for employee in rows]
+
+
+def _punch_approver_choices(tenant_id: UUID) -> list[tuple[str, str]]:
+    rows = list(
+        db.session.execute(
+            select(Membership, User)
+            .join(User, User.id == Membership.user_id)
+            .where(
+                Membership.tenant_id == tenant_id,
+                Membership.role.in_((MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER)),
+                User.is_active.is_(True),
+            )
+            .order_by(User.email.asc())
+        ).all()
+    )
+    return [("", "Fallback a admins del tenant")] + [
+        (str(user.id), f"{user.email} ({membership.role.value})") for membership, user in rows
+    ]
 
 
 def _tenant_admin_count(tenant_id: UUID) -> int:
@@ -726,6 +756,7 @@ def employees_edit(employee_id: UUID):
         abort(404)
 
     form = EmployeeEditForm()
+    form.punch_approver_user_id.choices = _punch_approver_choices(tenant_id)
 
     tenant_shifts: list[Shift] = []
     shifts_available = True
@@ -762,6 +793,7 @@ def employees_edit(employee_id: UUID):
         form.name.data = employee.name
         form.email.data = employee.email
         form.active.data = employee.active
+        form.punch_approver_user_id.data = str(employee.punch_approver_user_id) if employee.punch_approver_user_id else ""
         form.assignment_effective_from.data = date.today()
 
     if form.validate_on_submit():
@@ -799,6 +831,41 @@ def employees_edit(employee_id: UUID):
         if employee.active != new_active_status:
             employee.active_status_changed_at = datetime.now(timezone.utc)
         employee.active = new_active_status
+
+        selected_approver_user_id_raw = (form.punch_approver_user_id.data or "").strip()
+        selected_approver_user_id: UUID | None = None
+        if selected_approver_user_id_raw:
+            try:
+                selected_approver_user_id = UUID(selected_approver_user_id_raw)
+            except ValueError:
+                flash("Aprobador de rectificaciones invalido.", "danger")
+                return render_template(
+                    "admin/employee_edit.html",
+                    form=form,
+                    employee=employee,
+                    assignment_rows=assignment_rows,
+                )
+
+            approver_membership = db.session.execute(
+                select(Membership)
+                .join(User, User.id == Membership.user_id)
+                .where(
+                    Membership.tenant_id == tenant_id,
+                    Membership.user_id == selected_approver_user_id,
+                    Membership.role.in_((MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER)),
+                    User.is_active.is_(True),
+                )
+            ).scalar_one_or_none()
+            if approver_membership is None:
+                flash("Aprobador de rectificaciones invalido para este tenant.", "danger")
+                return render_template(
+                    "admin/employee_edit.html",
+                    form=form,
+                    employee=employee,
+                    assignment_rows=assignment_rows,
+                )
+        employee.punch_approver_user_id = selected_approver_user_id
+
         if form.pin.data:
             employee.pin_hash = hash_secret(form.pin.data)
 
@@ -870,6 +937,7 @@ def employees_edit(employee_id: UUID):
                 "email": employee.email,
                 "active": employee.active,
                 "active_status_changed_at": employee.active_status_changed_at.isoformat(),
+                "punch_approver_user_id": str(employee.punch_approver_user_id) if employee.punch_approver_user_id else None,
                 "pin_updated": bool(form.pin.data),
             },
         )
@@ -1201,8 +1269,9 @@ def approvals():
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
         abort(400, description="No active tenant selected.")
+    actor_user_id = UUID(current_user.get_id())
 
-    stmt = (
+    leave_stmt = (
         select(LeaveRequest, Employee, LeaveType)
         .join(Employee, Employee.id == LeaveRequest.employee_id)
         .join(LeaveType, LeaveType.id == LeaveRequest.type_id)
@@ -1212,8 +1281,30 @@ def approvals():
         )
         .order_by(LeaveRequest.created_at.asc())
     )
-    rows = db.session.execute(stmt).all()
-    return render_template("admin/approvals.html", rows=rows)
+    leave_rows = db.session.execute(leave_stmt).all()
+
+    correction_stmt = (
+        select(PunchCorrectionRequest, Employee, TimeEvent)
+        .join(Employee, Employee.id == PunchCorrectionRequest.employee_id)
+        .join(TimeEvent, TimeEvent.id == PunchCorrectionRequest.source_event_id)
+        .where(
+            PunchCorrectionRequest.tenant_id == tenant_id,
+            PunchCorrectionRequest.status == PunchCorrectionStatus.REQUESTED,
+            or_(
+                PunchCorrectionRequest.target_approver_user_id.is_(None),
+                PunchCorrectionRequest.target_approver_user_id == actor_user_id,
+            ),
+        )
+        .order_by(PunchCorrectionRequest.created_at.asc())
+    )
+    correction_rows = db.session.execute(correction_stmt).all()
+
+    return render_template(
+        "admin/approvals.html",
+        rows=leave_rows,
+        correction_rows=correction_rows,
+        punch_correction_status_labels=PUNCH_CORRECTION_STATUS_LABELS,
+    )
 
 
 def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
@@ -1274,6 +1365,170 @@ def approval_reject(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.REJECTED)
 
 
+@bp.get("/admin/punch-corrections")
+@login_required
+@tenant_required
+@approve_punch_corrections_required
+def punch_corrections():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+    actor_user_id = UUID(current_user.get_id())
+
+    pending_stmt = (
+        select(PunchCorrectionRequest, Employee, TimeEvent)
+        .join(Employee, Employee.id == PunchCorrectionRequest.employee_id)
+        .join(TimeEvent, TimeEvent.id == PunchCorrectionRequest.source_event_id)
+        .where(
+            PunchCorrectionRequest.tenant_id == tenant_id,
+            PunchCorrectionRequest.status == PunchCorrectionStatus.REQUESTED,
+            or_(
+                PunchCorrectionRequest.target_approver_user_id.is_(None),
+                PunchCorrectionRequest.target_approver_user_id == actor_user_id,
+            ),
+        )
+        .order_by(PunchCorrectionRequest.created_at.asc())
+    )
+    pending_rows = db.session.execute(pending_stmt).all()
+
+    history_stmt = (
+        select(PunchCorrectionRequest, Employee, TimeEvent)
+        .join(Employee, Employee.id == PunchCorrectionRequest.employee_id)
+        .join(TimeEvent, TimeEvent.id == PunchCorrectionRequest.source_event_id)
+        .where(
+            PunchCorrectionRequest.tenant_id == tenant_id,
+            PunchCorrectionRequest.status.in_(
+                (
+                    PunchCorrectionStatus.APPROVED,
+                    PunchCorrectionStatus.REJECTED,
+                    PunchCorrectionStatus.CANCELLED,
+                )
+            ),
+        )
+        .order_by(PunchCorrectionRequest.created_at.desc())
+        .limit(100)
+    )
+    history_rows = db.session.execute(history_stmt).all()
+    return render_template(
+        "admin/punch_corrections.html",
+        pending_rows=pending_rows,
+        history_rows=history_rows,
+        punch_correction_status_labels=PUNCH_CORRECTION_STATUS_LABELS,
+    )
+
+
+def _decide_punch_correction(correction_request_id: UUID, status: PunchCorrectionStatus):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    actor_user_id = UUID(current_user.get_id())
+    correction_request = db.session.execute(
+        select(PunchCorrectionRequest).where(
+            PunchCorrectionRequest.id == correction_request_id,
+            PunchCorrectionRequest.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if correction_request is None:
+        abort(404)
+    if correction_request.status != PunchCorrectionStatus.REQUESTED:
+        abort(409, description="La solicitud ya fue decidida.")
+    if (
+        correction_request.target_approver_user_id is not None
+        and correction_request.target_approver_user_id != actor_user_id
+    ):
+        abort(403, description="No puedes decidir esta solicitud.")
+
+    source_event = db.session.execute(
+        select(TimeEvent).where(
+            TimeEvent.id == correction_request.source_event_id,
+            TimeEvent.tenant_id == tenant_id,
+            TimeEvent.employee_id == correction_request.employee_id,
+        )
+    ).scalar_one_or_none()
+    if source_event is None:
+        abort(404)
+
+    already_superseded = db.session.execute(
+        select(TimeEventSupersession).where(TimeEventSupersession.original_event_id == source_event.id)
+    ).scalar_one_or_none()
+    if already_superseded is not None:
+        abort(409, description="El fichaje ya fue rectificado.")
+
+    replacement_event_id: UUID | None = None
+    if status == PunchCorrectionStatus.APPROVED:
+        replacement_event = TimeEvent(
+            tenant_id=tenant_id,
+            employee_id=correction_request.employee_id,
+            ts=correction_request.requested_ts,
+            type=correction_request.requested_type,
+            source=TimeEventSource.WEB,
+            meta_json={
+                "manual": True,
+                "via": "punch_correction_approved",
+                "source_event_id": str(source_event.id),
+                "correction_request_id": str(correction_request.id),
+            },
+        )
+        db.session.add(replacement_event)
+        db.session.flush()
+        replacement_event_id = replacement_event.id
+        db.session.add(
+            TimeEventSupersession(
+                tenant_id=tenant_id,
+                original_event_id=source_event.id,
+                replacement_event_id=replacement_event.id,
+                correction_request_id=correction_request.id,
+            )
+        )
+
+    correction_request.status = status
+    correction_request.approver_user_id = actor_user_id
+    correction_request.applied_event_id = replacement_event_id
+    correction_request.decided_at = datetime.now(timezone.utc)
+    log_audit(
+        action=f"PUNCH_CORRECTION_{status.value}",
+        entity_type="punch_correction_requests",
+        entity_id=correction_request.id,
+        payload={
+            "employee_id": str(correction_request.employee_id),
+            "source_event_id": str(correction_request.source_event_id),
+            "requested_ts": correction_request.requested_ts.isoformat(),
+            "requested_type": correction_request.requested_type.value,
+            "status": correction_request.status.value,
+            "target_approver_user_id": (
+                str(correction_request.target_approver_user_id)
+                if correction_request.target_approver_user_id
+                else None
+            ),
+            "applied_event_id": str(replacement_event_id) if replacement_event_id else None,
+        },
+    )
+    db.session.commit()
+    status_labels = {
+        PunchCorrectionStatus.APPROVED: "aprobada",
+        PunchCorrectionStatus.REJECTED: "rechazada",
+    }
+    flash(f"Solicitud de rectificacion {status_labels.get(status, status.value.lower())}.", "success")
+    return redirect(url_for("admin.punch_corrections"))
+
+
+@bp.post("/admin/punch-corrections/<uuid:correction_request_id>/approve")
+@login_required
+@tenant_required
+@approve_punch_corrections_required
+def punch_correction_approve(correction_request_id: UUID):
+    return _decide_punch_correction(correction_request_id, PunchCorrectionStatus.APPROVED)
+
+
+@bp.post("/admin/punch-corrections/<uuid:correction_request_id>/reject")
+@login_required
+@tenant_required
+@approve_punch_corrections_required
+def punch_correction_reject(correction_request_id: UUID):
+    return _decide_punch_correction(correction_request_id, PunchCorrectionStatus.REJECTED)
+
+
 @bp.get("/admin/reports/payroll")
 @login_required
 @tenant_required
@@ -1295,12 +1550,7 @@ def payroll_export():
 
     start = datetime.combine(form.date_from.data, time.min, tzinfo=timezone.utc)
     end = datetime.combine(form.date_to.data, time.max, tzinfo=timezone.utc)
-    stmt = (
-        select(TimeEvent, Employee)
-        .join(Employee, Employee.id == TimeEvent.employee_id)
-        .where(TimeEvent.ts >= start, TimeEvent.ts <= end)
-        .order_by(TimeEvent.ts.asc())
-    )
+    stmt = visible_events_with_employee_between_stmt(start, end)
     rows = db.session.execute(stmt).all()
 
     out = io.StringIO()

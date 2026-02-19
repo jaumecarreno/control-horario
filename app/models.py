@@ -64,6 +64,13 @@ class LeaveRequestStatus(str, enum.Enum):
     CANCELLED = "CANCELLED"
 
 
+class PunchCorrectionStatus(str, enum.Enum):
+    REQUESTED = "REQUESTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
 class LeavePolicyUnit(str, enum.Enum):
     DAYS = "DAYS"
     HOURS = "HOURS"
@@ -149,6 +156,9 @@ class Employee(db.Model):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    punch_approver_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     active_status_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
 
 
@@ -215,6 +225,67 @@ def prevent_time_event_update(_mapper: object, _connection: object, _target: obj
 @event.listens_for(TimeEvent, "before_delete")
 def prevent_time_event_delete(_mapper: object, _connection: object, _target: object) -> None:
     raise ValueError("time_events are append-only")
+
+
+class PunchCorrectionRequest(db.Model):
+    __tablename__ = "punch_correction_requests"
+    __table_args__ = (
+        Index("ix_punch_correction_requests_tenant_status", "tenant_id", "status"),
+        Index("ix_punch_correction_requests_employee_created", "employee_id", "created_at"),
+        CheckConstraint(
+            "requested_type IN ('IN', 'OUT')",
+            name="ck_punch_correction_requests_requested_type",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    employee_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
+    source_event_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("time_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    requested_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    requested_type: Mapped[TimeEventType] = mapped_column(Enum(TimeEventType, name="time_event_type"), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[PunchCorrectionStatus] = mapped_column(
+        Enum(PunchCorrectionStatus, name="punch_correction_status"),
+        nullable=False,
+        default=PunchCorrectionStatus.REQUESTED,
+    )
+    target_approver_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approver_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    applied_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("time_events.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TimeEventSupersession(db.Model):
+    __tablename__ = "time_event_supersessions"
+    __table_args__ = (
+        UniqueConstraint("original_event_id", name="uq_time_event_supersessions_original_event"),
+        UniqueConstraint("replacement_event_id", name="uq_time_event_supersessions_replacement_event"),
+        UniqueConstraint("correction_request_id", name="uq_time_event_supersessions_correction_request"),
+        Index("ix_time_event_supersessions_tenant_original", "tenant_id", "original_event_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    original_event_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("time_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    replacement_event_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("time_events.id", ondelete="RESTRICT"), nullable=False
+    )
+    correction_request_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("punch_correction_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
 
 
 class TimeAdjustment(db.Model):

@@ -9,19 +9,23 @@ import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.authorization import employee_self_service_required, manual_punch_required
 from app.extensions import db
-from app.forms import LeaveRequestForm
+from app.forms import LeaveRequestForm, PunchCorrectionRequestForm
 from app.models import (
     Employee,
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
     LeavePolicyUnit,
+    Membership,
+    MembershipRole,
+    PunchCorrectionRequest,
+    PunchCorrectionStatus,
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
@@ -29,8 +33,11 @@ from app.models import (
     ShiftLeavePolicy,
     TimeEvent,
     TimeEventSource,
+    TimeEventSupersession,
     TimeEventType,
+    User,
 )
+from app.time_events import visible_employee_events_between_stmt, visible_employee_recent_events_stmt
 from app.tenant import current_membership, tenant_required
 
 
@@ -64,6 +71,12 @@ LEAVE_STATUS_LABELS = {
     LeaveRequestStatus.APPROVED: "Aprobada",
     LeaveRequestStatus.REJECTED: "Rechazada",
     LeaveRequestStatus.CANCELLED: "Cancelada",
+}
+PUNCH_CORRECTION_STATUS_LABELS = {
+    PunchCorrectionStatus.REQUESTED: "Pendiente",
+    PunchCorrectionStatus.APPROVED: "Aprobada",
+    PunchCorrectionStatus.REJECTED: "Rechazada",
+    PunchCorrectionStatus.CANCELLED: "Cancelada",
 }
 
 
@@ -101,11 +114,7 @@ def _employee_for_current_user() -> Employee:
 
 def _todays_events(employee_id: uuid.UUID) -> list[TimeEvent]:
     start, end = _today_bounds_utc()
-    stmt = (
-        select(TimeEvent)
-        .where(TimeEvent.employee_id == employee_id, TimeEvent.ts >= start, TimeEvent.ts <= end)
-        .order_by(TimeEvent.ts.asc())
-    )
+    stmt = visible_employee_events_between_stmt(employee_id, start, end)
     return list(db.session.execute(stmt).scalars().all())
 
 
@@ -335,15 +344,7 @@ def _leave_policy_balances(employee: Employee, shift: Shift | None, current_day:
 def _work_balance_summary(employee: Employee, current_day: date) -> dict[str, str]:
     month_start_utc, _ = _month_bounds_utc(current_day.year, current_day.month)
     day_end_utc = datetime.combine(current_day, time.max, tzinfo=_app_timezone()).astimezone(timezone.utc)
-    month_events_stmt = (
-        select(TimeEvent)
-        .where(
-            TimeEvent.employee_id == employee.id,
-            TimeEvent.ts >= month_start_utc,
-            TimeEvent.ts <= day_end_utc,
-        )
-        .order_by(TimeEvent.ts.asc())
-    )
+    month_events_stmt = visible_employee_events_between_stmt(employee.id, month_start_utc, day_end_utc)
     month_events = list(db.session.execute(month_events_stmt).scalars().all())
     events_by_day: dict[date, list[TimeEvent]] = {}
     for event in month_events:
@@ -709,7 +710,7 @@ def punch_action(action: str):
 @employee_self_service_required
 def me_events():
     employee = _employee_for_current_user()
-    stmt = select(TimeEvent).where(TimeEvent.employee_id == employee.id).order_by(TimeEvent.ts.desc()).limit(100)
+    stmt = visible_employee_recent_events_stmt(employee.id, 100)
     events = list(db.session.execute(stmt).scalars().all())
     return render_template("employee/events.html", employee=employee, events=events)
 
@@ -766,6 +767,170 @@ def create_manual_punch():
     return redirect(url_for("employee.presence_control"))
 
 
+def _presence_month_redirect(selected_month: str | None) -> str:
+    if selected_month:
+        return url_for("employee.presence_control", month=selected_month)
+    return url_for("employee.presence_control")
+
+
+def _resolve_target_punch_approver(employee: Employee) -> uuid.UUID | None:
+    if employee.punch_approver_user_id is None:
+        return None
+
+    approver_membership = db.session.execute(
+        select(Membership)
+        .join(User, User.id == Membership.user_id)
+        .where(
+            Membership.tenant_id == employee.tenant_id,
+            Membership.user_id == employee.punch_approver_user_id,
+            Membership.role.in_((MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER)),
+            User.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if approver_membership is None:
+        return None
+    return employee.punch_approver_user_id
+
+
+@bp.post("/me/punch-corrections")
+@login_required
+@tenant_required
+@employee_self_service_required
+def punch_correction_request_create():
+    employee = _employee_for_current_user()
+    form = PunchCorrectionRequestForm()
+    selected_month = request.form.get("return_month")
+
+    if not form.validate_on_submit():
+        flash("Solicitud de rectificacion invalida.", "danger")
+        return redirect(_presence_month_redirect(selected_month))
+
+    source_event_id = uuid.UUID(form.source_event_id.data.strip())
+    source_event = db.session.execute(
+        select(TimeEvent).where(
+            TimeEvent.id == source_event_id,
+            TimeEvent.tenant_id == employee.tenant_id,
+            TimeEvent.employee_id == employee.id,
+        )
+    ).scalar_one_or_none()
+    if source_event is None:
+        abort(404)
+    if source_event.type not in {TimeEventType.IN, TimeEventType.OUT}:
+        flash("Solo puedes rectificar fichajes de entrada o salida.", "danger")
+        return redirect(_presence_month_redirect(selected_month))
+
+    source_local_day = _to_app_tz(source_event.ts).date()
+    today_local = datetime.now(_app_timezone()).date()
+    if source_local_day > today_local or (today_local - source_local_day).days > 30:
+        flash("Solo se permiten rectificaciones de fichajes dentro de los ultimos 30 dias.", "danger")
+        return redirect(_presence_month_redirect(selected_month))
+
+    existing_supersession = db.session.execute(
+        select(TimeEventSupersession).where(TimeEventSupersession.original_event_id == source_event.id)
+    ).scalar_one_or_none()
+    if existing_supersession is not None:
+        flash("Ese fichaje ya fue rectificado.", "warning")
+        return redirect(_presence_month_redirect(selected_month))
+
+    existing_pending = db.session.execute(
+        select(PunchCorrectionRequest.id).where(
+            PunchCorrectionRequest.source_event_id == source_event.id,
+            PunchCorrectionRequest.status == PunchCorrectionStatus.REQUESTED,
+        )
+    ).scalar_one_or_none()
+    if existing_pending is not None:
+        flash("Ya existe una solicitud pendiente para ese fichaje.", "warning")
+        return redirect(_presence_month_redirect(selected_month))
+
+    requested_type = TimeEventType(form.requested_kind.data)
+    requested_local_ts = datetime.combine(
+        form.requested_date.data,
+        time(hour=form.requested_hour.data, minute=form.requested_minute.data),
+        tzinfo=_app_timezone(),
+    )
+    requested_ts = requested_local_ts.astimezone(timezone.utc)
+
+    target_approver_user_id = _resolve_target_punch_approver(employee)
+    actor_user_id = uuid.UUID(current_user.get_id())
+    if target_approver_user_id is not None and target_approver_user_id == actor_user_id:
+        flash(
+            "No puedes ser tu propio aprobador de rectificaciones. Pide a un admin que cambie la configuracion.",
+            "danger",
+        )
+        return redirect(_presence_month_redirect(selected_month))
+
+    correction_request = PunchCorrectionRequest(
+        tenant_id=employee.tenant_id,
+        employee_id=employee.id,
+        source_event_id=source_event.id,
+        requested_ts=requested_ts,
+        requested_type=requested_type,
+        reason=form.reason.data.strip(),
+        status=PunchCorrectionStatus.REQUESTED,
+        target_approver_user_id=target_approver_user_id,
+    )
+    db.session.add(correction_request)
+    db.session.flush()
+    log_audit(
+        action="PUNCH_CORRECTION_REQUESTED",
+        entity_type="punch_correction_requests",
+        entity_id=correction_request.id,
+        payload={
+            "employee_id": str(employee.id),
+            "source_event_id": str(source_event.id),
+            "source_event_type": source_event.type.value,
+            "source_event_ts": source_event.ts.isoformat(),
+            "requested_ts": requested_ts.isoformat(),
+            "requested_type": requested_type.value,
+            "reason": correction_request.reason,
+            "target_approver_user_id": str(target_approver_user_id) if target_approver_user_id else None,
+            "status": correction_request.status.value,
+        },
+    )
+    db.session.commit()
+    flash("Solicitud de rectificacion enviada.", "success")
+    return redirect(_presence_month_redirect(selected_month))
+
+
+@bp.post("/me/punch-corrections/<uuid:correction_request_id>/cancel")
+@login_required
+@tenant_required
+@employee_self_service_required
+def punch_correction_request_cancel(correction_request_id: uuid.UUID):
+    employee = _employee_for_current_user()
+    selected_month = request.form.get("return_month")
+
+    correction_request = db.session.execute(
+        select(PunchCorrectionRequest).where(
+            PunchCorrectionRequest.id == correction_request_id,
+            PunchCorrectionRequest.employee_id == employee.id,
+            PunchCorrectionRequest.tenant_id == employee.tenant_id,
+        )
+    ).scalar_one_or_none()
+    if correction_request is None:
+        abort(404)
+    if correction_request.status != PunchCorrectionStatus.REQUESTED:
+        abort(409, description="La solicitud ya fue decidida.")
+
+    correction_request.status = PunchCorrectionStatus.CANCELLED
+    correction_request.decided_at = datetime.now(timezone.utc)
+    log_audit(
+        action="PUNCH_CORRECTION_CANCELLED",
+        entity_type="punch_correction_requests",
+        entity_id=correction_request.id,
+        payload={
+            "employee_id": str(employee.id),
+            "source_event_id": str(correction_request.source_event_id),
+            "requested_ts": correction_request.requested_ts.isoformat(),
+            "requested_type": correction_request.requested_type.value,
+            "status": correction_request.status.value,
+        },
+    )
+    db.session.commit()
+    flash("Solicitud de rectificacion cancelada.", "success")
+    return redirect(_presence_month_redirect(selected_month))
+
+
 @bp.get("/me/presence-control")
 @login_required
 @tenant_required
@@ -789,11 +954,7 @@ def presence_control():
         return redirect(url_for("employee.presence_control", month=f"{today_local.year:04d}-{today_local.month:02d}"))
 
     month_start, month_end = _month_bounds_utc(selected_year, selected_month)
-    month_events_stmt = (
-        select(TimeEvent)
-        .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= month_start, TimeEvent.ts <= month_end)
-        .order_by(TimeEvent.ts.asc())
-    )
+    month_events_stmt = visible_employee_events_between_stmt(employee.id, month_start, month_end)
     month_events = list(db.session.execute(month_events_stmt).scalars().all())
     events_by_day: dict[date, list[TimeEvent]] = {}
     for event in month_events:
@@ -870,8 +1031,17 @@ def presence_control():
             }
         )
 
-    recent_stmt = select(TimeEvent).where(TimeEvent.employee_id == employee.id).order_by(TimeEvent.ts.desc()).limit(12)
+    recent_stmt = visible_employee_recent_events_stmt(employee.id, 12)
     recent_events = list(db.session.execute(recent_stmt).scalars().all())
+    correction_rows_stmt = (
+        select(PunchCorrectionRequest, TimeEvent)
+        .join(TimeEvent, TimeEvent.id == PunchCorrectionRequest.source_event_id)
+        .where(PunchCorrectionRequest.employee_id == employee.id)
+        .order_by(PunchCorrectionRequest.created_at.desc())
+        .limit(20)
+    )
+    correction_rows = db.session.execute(correction_rows_stmt).all()
+    punch_correction_form = PunchCorrectionRequestForm()
     prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
     next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
     can_go_next_month = (selected_year, selected_month) < (today_local.year, today_local.month)
@@ -886,6 +1056,9 @@ def presence_control():
         month_expected=_minutes_to_hhmm(month_expected),
         month_balance=_minutes_to_hhmm(month_worked - month_expected),
         recent_events=recent_events,
+        correction_rows=correction_rows,
+        punch_correction_form=punch_correction_form,
+        punch_correction_status_labels=PUNCH_CORRECTION_STATUS_LABELS,
         to_app_tz=_to_app_tz,
         prev_month=prev_month,
         next_month=next_month,
@@ -919,11 +1092,7 @@ def pause_control():
         return redirect(url_for("employee.pause_control", month=f"{today_local.year:04d}-{today_local.month:02d}"))
 
     month_start, month_end = _month_bounds_utc(selected_year, selected_month)
-    month_events_stmt = (
-        select(TimeEvent)
-        .where(TimeEvent.employee_id == employee.id, TimeEvent.ts >= month_start, TimeEvent.ts <= month_end)
-        .order_by(TimeEvent.ts.asc())
-    )
+    month_events_stmt = visible_employee_events_between_stmt(employee.id, month_start, month_end)
     month_events = list(db.session.execute(month_events_stmt).scalars().all())
     events_by_day: dict[date, list[TimeEvent]] = {}
     for event in month_events:

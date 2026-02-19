@@ -31,7 +31,7 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 0
 fi
 
-ENDPOINTS="${SMOKE_ENDPOINTS:-/admin/turnos /admin/approvals /me/presence-control /me/pause-control /me/leaves}"
+ENDPOINTS="${SMOKE_ENDPOINTS:-/admin/turnos /admin/approvals /admin/punch-corrections /me/presence-control /me/pause-control /me/leaves}"
 failed=0
 base_url="${APP_URL%/}"
 

@@ -36,6 +36,20 @@ CREATE POLICY time_events_tenant_isolation ON time_events
 USING (tenant_id = current_setting('app.tenant_id')::uuid)
 WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
 
+ALTER TABLE punch_correction_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE punch_correction_requests FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS punch_correction_requests_tenant_isolation ON punch_correction_requests;
+CREATE POLICY punch_correction_requests_tenant_isolation ON punch_correction_requests
+USING (tenant_id = current_setting('app.tenant_id')::uuid)
+WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
+ALTER TABLE time_event_supersessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE time_event_supersessions FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS time_event_supersessions_tenant_isolation ON time_event_supersessions;
+CREATE POLICY time_event_supersessions_tenant_isolation ON time_event_supersessions
+USING (tenant_id = current_setting('app.tenant_id')::uuid)
+WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);
+
 ALTER TABLE time_adjustments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE time_adjustments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS time_adjustments_tenant_isolation ON time_adjustments;

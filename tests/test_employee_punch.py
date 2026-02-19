@@ -12,6 +12,8 @@ from app.models import (
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
     LeavePolicyUnit,
+    PunchCorrectionRequest,
+    PunchCorrectionStatus,
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
@@ -103,6 +105,187 @@ def test_manual_incident_creates_event_and_is_visible_in_presence(client):
     html = page.get_data(as_text=True)
     assert "Historial" in html
     assert "Manual" in html
+
+
+def test_punch_correction_request_creates_pending_request(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee_id = db.session.execute(select(Employee.id).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+        source_event = TimeEvent(
+            tenant_id=tenant_id,
+            employee_id=employee_id,
+            type=TimeEventType.IN,
+            source=TimeEventSource.WEB,
+            ts=datetime(2026, 2, 12, 8, 30, tzinfo=timezone.utc),
+        )
+        db.session.add(source_event)
+        db.session.commit()
+        source_event_id = source_event.id
+
+    create_request = client.post(
+        "/me/punch-corrections",
+        data={
+            "source_event_id": str(source_event_id),
+            "requested_date": "2026-02-12",
+            "requested_hour": "9",
+            "requested_minute": "0",
+            "requested_kind": "IN",
+            "reason": "Olvide fichar a la hora correcta al entrar.",
+        },
+        follow_redirects=True,
+    )
+    assert create_request.status_code == 200
+    html = create_request.get_data(as_text=True)
+    assert "Solicitud de rectificacion enviada." in html
+
+    with app.app_context():
+        request_row = db.session.execute(
+            select(PunchCorrectionRequest).where(PunchCorrectionRequest.source_event_id == source_event_id)
+        ).scalar_one()
+        assert request_row.status == PunchCorrectionStatus.REQUESTED
+
+
+def test_punch_correction_rejects_events_older_than_30_days(client, app, monkeypatch):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+    _freeze_employee_now(monkeypatch, 2026, 3, 15)
+
+    with app.app_context():
+        employee_id = db.session.execute(select(Employee.id).where(Employee.email == "employee@example.com")).scalar_one()
+        tenant_id = db.session.execute(select(Tenant.id).where(Tenant.slug == "tenant-a")).scalar_one()
+        source_event = TimeEvent(
+            tenant_id=tenant_id,
+            employee_id=employee_id,
+            type=TimeEventType.IN,
+            source=TimeEventSource.WEB,
+            ts=datetime(2026, 1, 10, 8, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(source_event)
+        db.session.commit()
+        source_event_id = source_event.id
+
+    create_request = client.post(
+        "/me/punch-corrections",
+        data={
+            "source_event_id": str(source_event_id),
+            "requested_date": "2026-01-10",
+            "requested_hour": "8",
+            "requested_minute": "30",
+            "requested_kind": "IN",
+            "reason": "Necesito corregir este fichaje antiguo de entrada.",
+        },
+        follow_redirects=True,
+    )
+    assert create_request.status_code == 200
+    html = create_request.get_data(as_text=True)
+    assert "Solo se permiten rectificaciones de fichajes dentro de los ultimos 30 dias." in html
+
+    with app.app_context():
+        total = db.session.execute(select(func.count()).select_from(PunchCorrectionRequest)).scalar_one()
+        assert total == 0
+
+
+def test_punch_correction_rejects_duplicate_pending_for_same_event(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "employee@example.com")).scalar_one()
+        source_event = TimeEvent(
+            tenant_id=employee.tenant_id,
+            employee_id=employee.id,
+            type=TimeEventType.OUT,
+            source=TimeEventSource.WEB,
+            ts=datetime(2026, 2, 14, 18, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(source_event)
+        db.session.flush()
+        db.session.add(
+            PunchCorrectionRequest(
+                tenant_id=employee.tenant_id,
+                employee_id=employee.id,
+                source_event_id=source_event.id,
+                requested_ts=datetime(2026, 2, 14, 17, 30, tzinfo=timezone.utc),
+                requested_type=TimeEventType.OUT,
+                reason="Peticion previa pendiente para el mismo fichaje.",
+                status=PunchCorrectionStatus.REQUESTED,
+            )
+        )
+        db.session.commit()
+        source_event_id = source_event.id
+
+    duplicate = client.post(
+        "/me/punch-corrections",
+        data={
+            "source_event_id": str(source_event_id),
+            "requested_date": "2026-02-14",
+            "requested_hour": "17",
+            "requested_minute": "45",
+            "requested_kind": "OUT",
+            "reason": "Quiero enviar una segunda solicitud para el mismo evento.",
+        },
+        follow_redirects=True,
+    )
+    assert duplicate.status_code == 200
+    html = duplicate.get_data(as_text=True)
+    assert "Ya existe una solicitud pendiente para ese fichaje." in html
+
+    with app.app_context():
+        total = db.session.execute(
+            select(func.count()).select_from(PunchCorrectionRequest).where(PunchCorrectionRequest.source_event_id == source_event_id)
+        ).scalar_one()
+        assert total == 1
+
+
+def test_punch_correction_cancel_changes_status(client, app):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    with app.app_context():
+        employee = db.session.execute(select(Employee).where(Employee.email == "employee@example.com")).scalar_one()
+        source_event = TimeEvent(
+            tenant_id=employee.tenant_id,
+            employee_id=employee.id,
+            type=TimeEventType.IN,
+            source=TimeEventSource.WEB,
+            ts=datetime(2026, 2, 12, 8, 0, tzinfo=timezone.utc),
+        )
+        db.session.add(source_event)
+        db.session.flush()
+        correction = PunchCorrectionRequest(
+            tenant_id=employee.tenant_id,
+            employee_id=employee.id,
+            source_event_id=source_event.id,
+            requested_ts=datetime(2026, 2, 12, 8, 30, tzinfo=timezone.utc),
+            requested_type=TimeEventType.IN,
+            reason="Necesito corregir la hora de entrada.",
+            status=PunchCorrectionStatus.REQUESTED,
+        )
+        db.session.add(correction)
+        db.session.commit()
+        correction_id = correction.id
+
+    cancel = client.post(
+        f"/me/punch-corrections/{correction_id}/cancel",
+        data={"return_month": "2026-02"},
+        follow_redirects=True,
+    )
+    assert cancel.status_code == 200
+    html = cancel.get_data(as_text=True)
+    assert "Solicitud de rectificacion cancelada." in html
+
+    with app.app_context():
+        refreshed = db.session.get(PunchCorrectionRequest, correction_id)
+        assert refreshed is not None
+        assert refreshed.status == PunchCorrectionStatus.CANCELLED
+        assert refreshed.decided_at is not None
 
 
 

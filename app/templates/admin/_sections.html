@@ -4,4 +4,5 @@
   <a class="{{ 'is-active' if endpoint.startswith('admin.users') else '' }}" href="{{ url_for('admin.users_list') }}">Users</a>
   <a class="{{ 'is-active' if endpoint.startswith('admin.shifts') else '' }}" href="{{ url_for('admin.shifts') }}">Turnos</a>
   <a class="{{ 'is-active' if endpoint.startswith('admin.approvals') or endpoint.startswith('admin.approval_') else '' }}" href="{{ url_for('admin.approvals') }}">Solicitudes</a>
+  <a class="{{ 'is-active' if endpoint.startswith('admin.punch_corrections') or endpoint.startswith('admin.punch_correction_') else '' }}" href="{{ url_for('admin.punch_corrections') }}">Rectificaciones</a>
 </nav>

@@ -6,8 +6,18 @@ from datetime import date
 from uuid import UUID
 
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, DateField, DecimalField, IntegerField, PasswordField, SelectField, StringField, SubmitField
-from wtforms.validators import DataRequired, Email, Length, NumberRange, Optional, ValidationError
+from wtforms import (
+    BooleanField,
+    DateField,
+    DecimalField,
+    IntegerField,
+    PasswordField,
+    SelectField,
+    StringField,
+    SubmitField,
+    TextAreaField,
+)
+from wtforms.validators import DataRequired, Email, InputRequired, Length, NumberRange, Optional, ValidationError
 
 
 class LoginForm(FlaskForm):
@@ -48,6 +58,7 @@ class EmployeeEditForm(FlaskForm):
     pin = PasswordField("New PIN (optional)", validators=[Optional(), Length(min=4, max=16)])
     active = BooleanField("Active", default=True)
     assignment_shift_id = SelectField("Asignar turno", choices=[], validators=[Optional()], default="", coerce=str)
+    punch_approver_user_id = SelectField("Aprobador de rectificaciones", choices=[], validators=[Optional()], default="", coerce=str)
     assignment_effective_from = DateField("Aplicar desde", validators=[Optional()], default=date.today)
     submit = SubmitField("Guardar cambios")
 
@@ -118,6 +129,26 @@ class LeaveRequestForm(FlaskForm):
     def validate_date_to(self, field: DateField) -> None:
         if self.date_from.data and field.data and field.data < self.date_from.data:
             raise ValidationError("La fecha de fin debe ser igual o posterior a la fecha de inicio.")
+
+
+class PunchCorrectionRequestForm(FlaskForm):
+    source_event_id = StringField("Fichaje a rectificar", validators=[DataRequired(), Length(max=64)])
+    requested_date = DateField("Nueva fecha", validators=[DataRequired()])
+    requested_hour = IntegerField("Nueva hora", validators=[InputRequired(), NumberRange(min=0, max=23)])
+    requested_minute = IntegerField("Nuevos minutos", validators=[InputRequired(), NumberRange(min=0, max=59)])
+    requested_kind = SelectField(
+        "Nuevo tipo",
+        choices=[("IN", "Entrada"), ("OUT", "Salida")],
+        validators=[DataRequired()],
+    )
+    reason = TextAreaField("Motivo", validators=[DataRequired(), Length(min=10, max=300)])
+    submit = SubmitField("Enviar solicitud")
+
+    def validate_source_event_id(self, field: StringField) -> None:
+        try:
+            UUID((field.data or "").strip())
+        except ValueError as exc:
+            raise ValidationError("Fichaje a rectificar invalido.") from exc
 
 
 class DateRangeExportForm(FlaskForm):
