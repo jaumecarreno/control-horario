@@ -1440,7 +1440,16 @@ def presence_control():
         .order_by(PunchCorrectionRequest.created_at.desc())
         .limit(20)
     )
-    correction_rows = db.session.execute(correction_rows_stmt).all()
+    try:
+        correction_rows = db.session.execute(correction_rows_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Punch correction history lookup failed. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        correction_rows = []
     punch_correction_form = PunchCorrectionRequestForm()
     prev_month = (month_start - timedelta(days=1)).strftime("%Y-%m")
     next_month = (month_end + timedelta(days=1)).strftime("%Y-%m")
@@ -1688,7 +1697,16 @@ def me_leaves():
         .where(LeaveRequest.employee_id == employee.id)
         .order_by(LeaveRequest.created_at.desc())
     )
-    requests_rows = db.session.execute(history_stmt).all()
+    try:
+        requests_rows = db.session.execute(history_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Leave history lookup failed. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        requests_rows = []
     return render_template(
         "employee/leaves.html",
         form=form,

@@ -1490,7 +1490,15 @@ def approvals():
         )
         .order_by(LeaveRequest.created_at.asc())
     )
-    leave_rows = db.session.execute(leave_stmt).all()
+    try:
+        leave_rows = db.session.execute(leave_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Leave approvals lookup failed. Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        leave_rows = []
 
     correction_stmt = (
         select(PunchCorrectionRequest, Employee, TimeEvent)
@@ -1506,7 +1514,16 @@ def approvals():
         )
         .order_by(PunchCorrectionRequest.created_at.asc())
     )
-    correction_rows = db.session.execute(correction_stmt).all()
+    try:
+        correction_rows = db.session.execute(correction_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Punch correction approvals lookup failed. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        correction_rows = []
 
     return render_template(
         "admin/approvals.html",
@@ -1633,7 +1650,16 @@ def punch_corrections():
         )
         .order_by(PunchCorrectionRequest.created_at.asc())
     )
-    pending_rows = db.session.execute(pending_stmt).all()
+    try:
+        pending_rows = db.session.execute(pending_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Pending punch correction lookup failed. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        pending_rows = []
 
     history_stmt = (
         select(PunchCorrectionRequest, Employee, TimeEvent)
@@ -1652,7 +1678,16 @@ def punch_corrections():
         .order_by(PunchCorrectionRequest.created_at.desc())
         .limit(100)
     )
-    history_rows = db.session.execute(history_stmt).all()
+    try:
+        history_rows = db.session.execute(history_stmt).all()
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Punch correction history lookup failed. "
+            "Run `alembic upgrade head` to apply pending migrations.",
+            exc_info=True,
+        )
+        history_rows = []
     return render_template(
         "admin/punch_corrections.html",
         pending_rows=pending_rows,
