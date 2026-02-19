@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import uuid
 
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, current_app, g, redirect, render_template, request, session, url_for
 from flask_login import current_user
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.blueprints.admin import bp as admin_bp
 from app.blueprints.auth import bp as auth_bp
@@ -53,16 +54,24 @@ def create_app(config_object: type[Config] = Config) -> Flask:
         from app.models import Employee
         from app.tenant import current_membership
 
-        membership = current_membership()
         profile_name = ""
         profile_role = "USER"
 
-        if membership is not None:
-            profile_role = getattr(membership.role, "value", str(membership.role))
-            if membership.employee_id is not None:
-                employee = db.session.get(Employee, membership.employee_id)
-                if employee is not None and employee.name:
-                    profile_name = employee.name.strip()
+        try:
+            membership = current_membership()
+            if membership is not None:
+                profile_role = getattr(membership.role, "value", str(membership.role))
+                if membership.employee_id is not None:
+                    employee = db.session.get(Employee, membership.employee_id)
+                    if employee is not None and employee.name:
+                        profile_name = employee.name.strip()
+        except (OperationalError, ProgrammingError, LookupError):
+            db.session.rollback()
+            current_app.logger.warning(
+                "Navigation profile lookup failed. Falling back to session user metadata. "
+                "Run `alembic upgrade head` to apply pending migrations and verify membership roles.",
+                exc_info=True,
+            )
 
         if not profile_name:
             email = getattr(current_user, "email", "") or ""
