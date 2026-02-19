@@ -22,7 +22,11 @@
             <td>{{ membership.role.value if membership.role else '-' }}</td>
             <td>{{ employee.name if employee else '-' }}</td>
             <td>{{ 'Yes' if user.is_active else 'No' }}</td>
-            <td><a href="{{ url_for('admin.users_edit', user_id=user.id) }}">Edit</a></td>
+            <td>
+              <a href="{{ url_for('admin.users_edit', user_id=user.id) }}">Edit</a>
+              ·
+              <a href="{{ url_for('admin.users_reset_password', user_id=user.id) }}">Reset password</a>
+            </td>
           </tr>
         {% else %}
           <tr><td colspan="5">No users found.</td></tr>

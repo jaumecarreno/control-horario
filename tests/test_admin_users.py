@@ -206,3 +206,37 @@ def test_user_cannot_remove_own_last_admin_access(client):
             )
         ).scalar_one()
         assert tenant_b_membership.role == MembershipRole.OWNER
+
+
+def test_admin_can_force_reset_user_password(admin_only_client):
+    _login_admin(admin_only_client)
+
+    create_response = admin_only_client.post(
+        "/admin/users/new",
+        data={
+            "email": "reset.target@example.com",
+            "password": "password123",
+            "confirm_password": "password123",
+            "role": "ADMIN",
+            "employee_id": "",
+            "active": "y",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 302
+
+    with admin_only_client.application.app_context():
+        user = db.session.execute(select(User).where(User.email == "reset.target@example.com")).scalar_one()
+        user_id = user.id
+
+    response = admin_only_client.post(
+        f"/admin/users/{user_id}/reset-password",
+        data={"temporary_password": "temporary-123"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    with admin_only_client.application.app_context():
+        updated = db.session.get(User, user_id)
+        assert updated is not None
+        assert updated.must_change_password is True

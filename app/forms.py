@@ -22,6 +22,18 @@ class TenantSelectForm(FlaskForm):
     submit = SubmitField("Use tenant")
 
 
+class PasswordChangeForm(FlaskForm):
+    current_password = PasswordField("Contraseña actual", validators=[DataRequired(), Length(min=8, max=255)])
+    new_password = PasswordField("Nueva contraseña", validators=[DataRequired(), Length(min=8, max=255)])
+    confirm_password = PasswordField("Confirmar nueva contraseña", validators=[DataRequired(), Length(min=8, max=255)])
+    submit = SubmitField("Actualizar contraseña")
+
+
+class AdminResetPasswordForm(FlaskForm):
+    temporary_password = PasswordField("Contraseña temporal", validators=[DataRequired(), Length(min=8, max=255)])
+    submit = SubmitField("Resetear contraseña")
+
+
 class EmployeeCreateForm(FlaskForm):
     name = StringField("Name", validators=[DataRequired(), Length(max=255)])
     email = StringField("Email", validators=[Optional(), Email(), Length(max=255)])
