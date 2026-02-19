@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import UUID
 
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, DateField, DecimalField, IntegerField, PasswordField, SelectField, StringField, SubmitField
@@ -10,7 +11,7 @@ from wtforms.validators import DataRequired, Email, Length, NumberRange, Optiona
 
 
 class LoginForm(FlaskForm):
-    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)], filters=[lambda value: value.strip() if value else value])
     password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=255)])
     remember = BooleanField("Remember me")
     submit = SubmitField("Sign in")
@@ -19,6 +20,18 @@ class LoginForm(FlaskForm):
 class TenantSelectForm(FlaskForm):
     tenant_id = SelectField("Tenant", choices=[], validators=[DataRequired()], coerce=str)
     submit = SubmitField("Use tenant")
+
+
+class PasswordChangeForm(FlaskForm):
+    current_password = PasswordField("Contraseña actual", validators=[DataRequired(), Length(min=8, max=255)])
+    new_password = PasswordField("Nueva contraseña", validators=[DataRequired(), Length(min=8, max=255)])
+    confirm_password = PasswordField("Confirmar nueva contraseña", validators=[DataRequired(), Length(min=8, max=255)])
+    submit = SubmitField("Actualizar contraseña")
+
+
+class AdminResetPasswordForm(FlaskForm):
+    temporary_password = PasswordField("Contraseña temporal", validators=[DataRequired(), Length(min=8, max=255)])
+    submit = SubmitField("Resetear contraseña")
 
 
 class EmployeeCreateForm(FlaskForm):
@@ -37,6 +50,62 @@ class EmployeeEditForm(FlaskForm):
     assignment_shift_id = SelectField("Asignar turno", choices=[], validators=[Optional()], default="", coerce=str)
     assignment_effective_from = DateField("Aplicar desde", validators=[Optional()], default=date.today)
     submit = SubmitField("Guardar cambios")
+
+
+class UserCreateForm(FlaskForm):
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)], filters=[lambda value: value.strip() if value else value])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=255)])
+    confirm_password = PasswordField("Confirm password", validators=[DataRequired(), Length(min=8, max=255)])
+    role = SelectField(
+        "Role",
+        choices=[
+            ("OWNER", "Owner"),
+            ("ADMIN", "Admin"),
+            ("MANAGER", "Manager"),
+            ("EMPLOYEE", "Employee"),
+        ],
+        validators=[DataRequired()],
+        default="EMPLOYEE",
+    )
+    employee_id = SelectField("Employee", choices=[], validators=[Optional()], coerce=str)
+    active = BooleanField("Active", default=True)
+    submit = SubmitField("Create user")
+
+
+class UserEditForm(FlaskForm):
+    role = SelectField(
+        "Role",
+        choices=[
+            ("OWNER", "Owner"),
+            ("ADMIN", "Admin"),
+            ("MANAGER", "Manager"),
+            ("EMPLOYEE", "Employee"),
+        ],
+        validators=[DataRequired()],
+    )
+    employee_id = SelectField("Employee", choices=[], validators=[Optional()], coerce=str)
+    active = BooleanField("Active", default=True)
+    submit = SubmitField("Guardar cambios")
+
+    def validate_role(self, field: SelectField) -> None:
+        allowed_roles = {"OWNER", "ADMIN", "MANAGER", "EMPLOYEE"}
+        if field.data not in allowed_roles:
+            raise ValidationError("Rol invalido.")
+
+    def validate_employee_id(self, field: SelectField) -> None:
+        role = self.role.data
+        employee_id = (field.data or "").strip()
+        if role == "EMPLOYEE":
+            if not employee_id:
+                raise ValidationError("Debe seleccionar un empleado para el rol EMPLOYEE.")
+            try:
+                UUID(employee_id)
+            except ValueError as exc:
+                raise ValidationError("Empleado invalido para el tenant actual.") from exc
+            return
+
+        if employee_id:
+            raise ValidationError("Los roles admin/manager/owner no deben tener empleado asociado.")
 
 
 class LeaveRequestForm(FlaskForm):

@@ -9,10 +9,10 @@ from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import select
 
 from app.extensions import db
-from app.forms import LoginForm, TenantSelectForm
+from app.forms import LoginForm, PasswordChangeForm, TenantSelectForm
 from app.models import Membership, Tenant, User
 from app.tenant import landing_endpoint_for_membership
-from app.security import verify_secret
+from app.security import hash_secret, verify_secret
 
 
 bp = Blueprint("auth", __name__)
@@ -29,6 +29,8 @@ def _is_safe_next(target: str) -> bool:
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
+        if current_user.must_change_password:
+            return redirect(url_for("auth.me_security_password"))
         if session.get("active_tenant_id"):
             return redirect(url_for("employee.me_today"))
         return redirect(url_for("auth.select_tenant"))
@@ -48,6 +50,9 @@ def login():
         login_user(user, remember=form.remember.data)
         session.pop("active_tenant_id", None)
 
+        if user.must_change_password:
+            return redirect(url_for("auth.me_security_password"))
+
         db.session.info["actor_user_id"] = str(user.id)
         db.session.info["tenant_id"] = NO_TENANT_UUID
         db.session.rollback()
@@ -63,6 +68,32 @@ def login():
         return redirect(url_for("auth.select_tenant"))
 
     return render_template("auth/login.html", form=form)
+
+
+
+@bp.route("/me/security/password", methods=["GET", "POST"])
+@login_required
+def me_security_password():
+    form = PasswordChangeForm()
+
+    if form.validate_on_submit():
+        if not verify_secret(current_user.password_hash, form.current_password.data):
+            flash("La contraseña actual es incorrecta.", "danger")
+            return render_template("auth/password_change.html", form=form), 400
+
+        if form.new_password.data != form.confirm_password.data:
+            flash("La confirmación de la nueva contraseña no coincide.", "danger")
+            return render_template("auth/password_change.html", form=form), 400
+
+        current_user.password_hash = hash_secret(form.new_password.data)
+        current_user.must_change_password = False
+        db.session.commit()
+        flash("Contraseña actualizada.", "success")
+        if session.get("active_tenant_id"):
+            return redirect(url_for("employee.me_today"))
+        return redirect(url_for("auth.select_tenant"))
+
+    return render_template("auth/password_change.html", form=form)
 
 
 @bp.post("/logout")

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Create user</h1>
+    <form method="post">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.email.id }}">Email</label>
+      {{ form.email() }}
+      <label for="{{ form.password.id }}">Password</label>
+      {{ form.password() }}
+      <label for="{{ form.confirm_password.id }}">Confirm password</label>
+      {{ form.confirm_password() }}
+      <label for="{{ form.role.id }}">Role</label>
+      {{ form.role() }}
+      <label for="{{ form.employee_id.id }}">Employee (optional)</label>
+      {{ form.employee_id() }}
+      <div class="inline" style="margin-top: .75rem;">
+        {{ form.active() }} <span>Active</span>
+      </div>
+      <div style="margin-top: 1rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+{% endblock %}

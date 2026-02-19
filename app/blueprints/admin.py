@@ -14,8 +14,24 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
+from app.authorization import (
+    approve_leaves_required,
+    export_payroll_required,
+    manage_employees_required,
+    manage_shifts_required,
+    manage_users_required,
+    view_adjustments_required,
+)
 from app.extensions import db
-from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm
+from app.forms import (
+    AdminResetPasswordForm,
+    DateRangeExportForm,
+    EmployeeCreateForm,
+    EmployeeEditForm,
+    ShiftCreateForm,
+    UserCreateForm,
+    UserEditForm,
+)
 from app.models import (
     Employee,
     EmployeeShiftAssignment,
@@ -24,19 +40,20 @@ from app.models import (
     LeaveRequest,
     LeaveRequestStatus,
     LeaveType,
+    Membership,
     MembershipRole,
     Shift,
+    User,
     ShiftLeavePolicy,
     TimeAdjustment,
     TimeEvent,
 )
 from app.security import hash_secret
-from app.tenant import get_active_tenant_id, roles_required, tenant_required
+from app.tenant import get_active_tenant_id, tenant_required
 
 
 bp = Blueprint("admin", __name__)
 
-ADMIN_ROLES = {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}
 SHIFT_FREQUENCY_LABELS = {
     ExpectedHoursFrequency.YEARLY: "Anuales",
     ExpectedHoursFrequency.MONTHLY: "Mensuales",
@@ -342,10 +359,300 @@ def _current_shift_names_by_employee(employee_ids: list[UUID], today: date) -> d
     return current_shift_by_employee
 
 
+
+def _employee_choices(tenant_id: UUID) -> list[tuple[str, str]]:
+    rows = list(db.session.execute(select(Employee).where(Employee.tenant_id == tenant_id).order_by(Employee.name.asc())).scalars().all())
+    return [(str(employee.id), f"{employee.name} ({employee.email or '-'})") for employee in rows]
+
+
+def _tenant_admin_count(tenant_id: UUID) -> int:
+    return int(
+        db.session.execute(
+            select(func.count(Membership.id)).where(
+                Membership.tenant_id == tenant_id,
+                Membership.role.in_((MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER)),
+            )
+        ).scalar_one()
+    )
+
+
+def _can_manage_owner_transition(actor_role: MembershipRole, current_role: MembershipRole, new_role: MembershipRole) -> bool:
+    owner_change = current_role is MembershipRole.OWNER or new_role is MembershipRole.OWNER
+    if not owner_change:
+        return True
+    return actor_role is MembershipRole.OWNER
+
+
+def _would_remove_last_admin_access(tenant_id: UUID, target_user_id: UUID, new_role: MembershipRole) -> bool:
+    if new_role in {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}:
+        return False
+
+    membership = db.session.execute(
+        select(Membership).where(Membership.tenant_id == tenant_id, Membership.user_id == target_user_id)
+    ).scalar_one_or_none()
+    if membership is None:
+        return False
+    if membership.role not in {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}:
+        return False
+
+    return _tenant_admin_count(tenant_id) <= 1
+
+
+@bp.get("/admin/users")
+@login_required
+@tenant_required
+@manage_users_required
+def users_list():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    rows = list(
+        db.session.execute(
+            select(Membership, User, Employee)
+            .join(User, User.id == Membership.user_id)
+            .outerjoin(Employee, Employee.id == Membership.employee_id)
+            .where(Membership.tenant_id == tenant_id)
+            .order_by(User.email.asc())
+        ).all()
+    )
+    return render_template("admin/users.html", rows=rows)
+
+
+@bp.route("/admin/users/new", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@manage_users_required
+def users_new():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = UserCreateForm()
+    form.employee_id.choices = [("", "Sin empleado")] + _employee_choices(tenant_id)
+
+    if form.validate_on_submit():
+        normalized_email = form.email.data.strip().lower()
+        password = form.password.data
+        confirm_password = form.confirm_password.data
+
+        if password != confirm_password:
+            flash("La confirmacion de password no coincide.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        existing = db.session.execute(select(User).where(User.email == normalized_email)).scalar_one_or_none()
+        if existing is not None:
+            flash("Ya existe un usuario con ese email.", "warning")
+            return render_template("admin/user_new.html", form=form)
+
+        try:
+            selected_role = MembershipRole(form.role.data)
+        except ValueError:
+            flash("Rol invalido.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        selected_employee_id = form.employee_id.data.strip() if form.employee_id.data else ""
+        employee_id = None
+        if selected_role is MembershipRole.EMPLOYEE:
+            if not selected_employee_id:
+                flash("Debe seleccionar un empleado para el rol EMPLOYEE.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            try:
+                parsed_employee_id = UUID(selected_employee_id)
+            except ValueError:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            employee = db.session.execute(
+                select(Employee).where(Employee.id == parsed_employee_id, Employee.tenant_id == tenant_id)
+            ).scalar_one_or_none()
+            if employee is None:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_new.html", form=form)
+            employee_id = employee.id
+        elif selected_employee_id:
+            flash("Los roles admin/manager/owner no deben tener empleado asociado.", "danger")
+            return render_template("admin/user_new.html", form=form)
+
+        user = User(
+            email=normalized_email,
+            password_hash=hash_secret(password),
+            is_active=bool(form.active.data),
+        )
+        db.session.add(user)
+        db.session.flush()
+
+        membership = Membership(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            role=selected_role,
+            employee_id=employee_id,
+        )
+        db.session.add(membership)
+        db.session.commit()
+        flash("Usuario creado.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_new.html", form=form)
+
+
+@bp.route("/admin/users/<uuid:user_id>/edit", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@manage_users_required
+def users_edit(user_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    row = db.session.execute(
+        select(Membership, User)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.tenant_id == tenant_id, Membership.user_id == user_id)
+    ).one_or_none()
+    if row is None:
+        abort(404)
+    membership, user = row
+
+    actor_membership = db.session.execute(
+        select(Membership).where(Membership.tenant_id == tenant_id, Membership.user_id == UUID(current_user.get_id()))
+    ).scalar_one_or_none()
+    if actor_membership is None:
+        abort(403, description="Insufficient permissions.")
+
+    form = UserEditForm()
+    form.employee_id.choices = [("", "Sin empleado")] + _employee_choices(tenant_id)
+
+    if request.method == "GET":
+        form.role.data = membership.role.value
+        form.employee_id.data = str(membership.employee_id) if membership.employee_id else ""
+        form.active.data = user.is_active
+
+    if form.validate_on_submit():
+        try:
+            new_role = MembershipRole(form.role.data)
+        except ValueError:
+            flash("Rol invalido.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        if not _can_manage_owner_transition(actor_membership.role, membership.role, new_role):
+            flash("Solo OWNER puede cambiar asignaciones de OWNER.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        selected_employee_id = (form.employee_id.data or "").strip()
+        employee_id = None
+        if new_role is MembershipRole.EMPLOYEE:
+            try:
+                parsed_employee_id = UUID(selected_employee_id)
+            except ValueError:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_edit.html", form=form, user=user)
+            employee = db.session.execute(
+                select(Employee).where(Employee.id == parsed_employee_id, Employee.tenant_id == tenant_id)
+            ).scalar_one_or_none()
+            if employee is None:
+                flash("Empleado invalido para el tenant actual.", "danger")
+                return render_template("admin/user_edit.html", form=form, user=user)
+            employee_id = employee.id
+
+        if (
+            membership.user_id == UUID(current_user.get_id())
+            and _would_remove_last_admin_access(tenant_id, membership.user_id, new_role)
+        ):
+            flash("No puedes quitar tu ultimo acceso administrativo del tenant.", "danger")
+            return render_template("admin/user_edit.html", form=form, user=user)
+
+        previous_role = membership.role
+        previous_employee_id = membership.employee_id
+        previous_status = user.is_active
+
+        membership.role = new_role
+        membership.employee_id = employee_id
+        user.is_active = bool(form.active.data)
+
+        db.session.flush()
+
+        if previous_role != membership.role or previous_employee_id != membership.employee_id:
+            log_audit(
+                action="USER_ROLE_CHANGED",
+                entity_type="memberships",
+                entity_id=membership.id,
+                payload={
+                    "user_id": str(user.id),
+                    "before": {
+                        "role": previous_role.value,
+                        "employee_id": str(previous_employee_id) if previous_employee_id else None,
+                    },
+                    "after": {
+                        "role": membership.role.value,
+                        "employee_id": str(membership.employee_id) if membership.employee_id else None,
+                    },
+                },
+            )
+
+        if previous_status != user.is_active:
+            log_audit(
+                action="USER_STATUS_CHANGED",
+                entity_type="users",
+                entity_id=user.id,
+                payload={
+                    "before": {"is_active": previous_status},
+                    "after": {"is_active": user.is_active},
+                },
+            )
+
+        db.session.commit()
+        flash("Usuario actualizado.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_edit.html", form=form, user=user)
+
+
+
+@bp.route("/admin/users/<uuid:user_id>/reset-password", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@manage_users_required
+def users_reset_password(user_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    row = db.session.execute(
+        select(Membership, User)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.tenant_id == tenant_id, Membership.user_id == user_id)
+    ).one_or_none()
+    if row is None:
+        abort(404)
+    membership, user = row
+
+    form = AdminResetPasswordForm()
+    if form.validate_on_submit():
+        user.password_hash = hash_secret(form.temporary_password.data)
+        user.must_change_password = True
+        db.session.flush()
+
+        log_audit(
+            action="USER_PASSWORD_RESET",
+            entity_type="users",
+            entity_id=user.id,
+            payload={
+                "user_id": str(user.id),
+                "membership_role": membership.role.value,
+                "must_change_password": True,
+            },
+        )
+        db.session.commit()
+        flash("Contraseña temporal establecida. El usuario deberá cambiarla al iniciar sesión.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_reset_password.html", form=form, user=user)
+
+
 @bp.get("/admin/employees")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_list():
     employees = list(db.session.execute(select(Employee).order_by(Employee.name.asc())).scalars().all())
     active_employees = [employee for employee in employees if employee.active]
@@ -374,7 +681,7 @@ def employees_list():
 @bp.route("/admin/employees/new", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_new():
     form = EmployeeCreateForm()
     if form.validate_on_submit():
@@ -406,7 +713,7 @@ def employees_new():
 @bp.route("/admin/employees/<uuid:employee_id>/edit", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_edit(employee_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -588,7 +895,7 @@ def employees_edit(employee_id: UUID):
 @bp.get("/admin/team-today")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def team_today():
     return redirect(url_for("admin.shifts"))
 
@@ -596,7 +903,7 @@ def team_today():
 @bp.get("/admin/turnos")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts():
     return _render_turnos()
 
@@ -619,7 +926,7 @@ def _render_turnos():
 @bp.route("/admin/turnos/new", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts_new():
     form = ShiftCreateForm()
     policy_default_valid_from, policy_default_valid_to = _policy_default_dates()
@@ -729,7 +1036,7 @@ def shifts_new():
 @bp.route("/admin/turnos/<uuid:shift_id>/edit", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts_edit(shift_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -889,7 +1196,7 @@ def shifts_edit(shift_id: UUID):
 @bp.get("/admin/approvals")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approvals():
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -954,7 +1261,7 @@ def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
 @bp.post("/admin/approvals/<uuid:leave_request_id>/approve")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approval_approve(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.APPROVED)
 
@@ -962,7 +1269,7 @@ def approval_approve(leave_request_id: UUID):
 @bp.post("/admin/approvals/<uuid:leave_request_id>/reject")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approval_reject(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.REJECTED)
 
@@ -970,7 +1277,7 @@ def approval_reject(leave_request_id: UUID):
 @bp.get("/admin/reports/payroll")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@export_payroll_required
 def payroll_report():
     form = DateRangeExportForm()
     return render_template("admin/payroll.html", form=form)
@@ -979,7 +1286,7 @@ def payroll_report():
 @bp.post("/admin/reports/payroll/export")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@export_payroll_required
 def payroll_export():
     form = DateRangeExportForm()
     if not form.validate_on_submit():
@@ -1011,7 +1318,7 @@ def payroll_export():
 @bp.get("/admin/adjustments")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@view_adjustments_required
 def adjustments_stub():
     rows = list(
         db.session.execute(select(TimeAdjustment).order_by(TimeAdjustment.created_at.desc()).limit(20)).scalars().all()
