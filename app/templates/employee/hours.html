@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card hours-card">
+    <div class="hours-header">
+      <div>
+        <h1 style="margin-bottom:.25rem;">Mis horas</h1>
+        <p class="muted" style="margin-top:0;">{{ employee.name }}</p>
+      </div>
+      <div class="month-nav">
+        <a class="month-nav-btn" href="{{ prev_url }}" aria-label="Periodo anterior">&#9664;</a>
+        <strong class="month-nav-label">{{ period_label }}</strong>
+        {% if can_go_next %}
+          <a class="month-nav-btn" href="{{ next_url }}" aria-label="Periodo siguiente">&#9654;</a>
+        {% else %}
+          <span class="month-nav-btn is-disabled" aria-label="Periodo siguiente deshabilitado" aria-disabled="true">&#9654;</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <form method="get" class="hours-filter">
+      <div class="hours-filter-grid">
+        <div>
+          <label for="hours-preset">Periodo</label>
+          <select id="hours-preset" name="preset">
+            {% for option in period_options %}
+              <option value="{{ option.value }}" {% if preset == option.value %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="hours-anchor">Fecha ancla</label>
+          <input id="hours-anchor" name="anchor" type="date" value="{{ anchor }}" max="{{ today }}">
+        </div>
+        <div>
+          <label for="hours-date-from">Desde</label>
+          <input id="hours-date-from" name="date_from" type="date" value="{{ date_from_value }}" max="{{ today }}">
+        </div>
+        <div>
+          <label for="hours-date-to">Hasta</label>
+          <input id="hours-date-to" name="date_to" type="date" value="{{ date_to_value }}" max="{{ today }}">
+        </div>
+        <div class="hours-filter-actions">
+          <button type="submit">Aplicar</button>
+        </div>
+      </div>
+      <p class="muted" style="margin:.55rem 0 0;">Usa Dia/Semana/Mes/Ano con fecha ancla, o Rango con desde/hasta.</p>
+    </form>
+
+    <div class="hours-summary-grid">
+      <article class="hours-summary-card">
+        <p class="muted">Trabajado</p>
+        <strong>{{ totals.worked_display }}</strong>
+      </article>
+      <article class="hours-summary-card">
+        <p class="muted">Pausas</p>
+        <strong>{{ totals.paused_display }}</strong>
+      </article>
+      <article class="hours-summary-card">
+        <p class="muted">Neto</p>
+        <strong>{{ totals.net_display }}</strong>
+      </article>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Dia</th>
+          <th>Entrada/Salida</th>
+          <th>Pausas</th>
+          <th>Trabajado</th>
+          <th>Pausas</th>
+          <th>Neto</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in days %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td>{% if row.in_out %}{{ row.in_out|join(", ") }}{% else %}-{% endif %}</td>
+            <td>{% if row.pauses %}{{ row.pauses|join(", ") }}{% else %}-{% endif %}</td>
+            <td>{{ row.worked_display }}</td>
+            <td>{{ row.paused_display }}</td>
+            <td><strong>{{ row.net_display }}</strong></td>
+            <td>
+              <span class="hours-status {{ 'is-open' if row.is_open else 'is-closed' }}">
+                {{ "Abierta" if row.is_open else "Cerrada" }}
+              </span>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7">No hay dias en el rango seleccionado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if calendar %}
+    <section class="card hours-calendar-card">
+      <h2 style="margin-top:0;">Calendario visual - {{ calendar.month_label }}</h2>
+      <div class="hours-calendar-grid">
+        {% for weekday in calendar.weekdays %}
+          <div class="hours-calendar-weekday">{{ weekday }}</div>
+        {% endfor %}
+
+        {% for week in calendar.weeks %}
+          {% for cell in week %}
+            {% if cell %}
+              <div class="hours-calendar-cell{% if cell.has_events %} has-events{% endif %}{% if cell.is_open %} is-open{% endif %}{% if cell.is_today %} is-today{% endif %}">
+                <span class="hours-calendar-day">{{ cell.day_number }}</span>
+                <span class="hours-calendar-net">{{ cell.net_display }}</span>
+              </div>
+            {% else %}
+              <div class="hours-calendar-cell is-empty"></div>
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

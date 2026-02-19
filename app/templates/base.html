@@ -23,7 +23,7 @@
       <nav id="site-nav">
         {% set endpoint = request.endpoint or '' %}
         {% if current_user.is_authenticated %}
-          <a class="nav-link{{ ' is-active' if endpoint == 'employee.me_today' else '' }}" href="{{ url_for('employee.me_today') }}">
+          <a class="nav-link{{ ' is-active' if endpoint in ['employee.me_hours', 'employee.me_hours_data'] else '' }}" href="{{ url_for('employee.me_hours') }}">
             <span class="nav-link-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4.8 10.3L12 4.8L19.2 10.3V18.2C19.2 19.1 18.5 19.8 17.6 19.8H6.4C5.5 19.8 4.8 19.1 4.8 18.2V10.3Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>
@@ -32,7 +32,7 @@
             </span>
             <span class="nav-link-label">Mis horas</span>
           </a>
-          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint != 'employee.me_today' else '' }}" href="{{ url_for('employee.presence_control') }}">
+          <a class="nav-link{{ ' is-active' if endpoint.startswith('employee.') and endpoint not in ['employee.me_today', 'employee.me_hours', 'employee.me_hours_data'] else '' }}" href="{{ url_for('employee.presence_control') }}">
             <span class="nav-link-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4.8 12A7.2 7.2 0 1 0 12 4.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>

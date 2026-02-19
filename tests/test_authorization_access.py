@@ -138,6 +138,16 @@ def test_manual_punch_requires_employee_profile(client, role_access_context):
         assert membership.employee_id is not None
 
 
+def test_my_hours_requires_employee_profile(client, role_access_context):
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="GET",
+        path="/me/hours",
+        allowed_roles={MembershipRole.EMPLOYEE},
+    )
+
+
 def test_punch_correction_create_requires_employee_profile(client, role_access_context):
     data = {
         "source_event_id": str(uuid.uuid4()),

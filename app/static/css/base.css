@@ -430,6 +430,136 @@ tbody tr:hover td {
   min-width: 8.5rem;
   text-align: center;
 }
+.hours-card {
+  max-width: 1160px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.hours-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.hours-filter {
+  margin-top: .9rem;
+  margin-bottom: .9rem;
+  padding: .75rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-muted);
+}
+.hours-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .65rem;
+  align-items: end;
+}
+.hours-filter-grid label {
+  font-size: .8rem;
+}
+.hours-filter-actions {
+  display: flex;
+}
+.hours-filter-actions button {
+  width: 100%;
+}
+.hours-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .65rem;
+  margin-bottom: .95rem;
+}
+.hours-summary-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-muted);
+  padding: .75rem;
+}
+.hours-summary-card p {
+  margin: 0;
+}
+.hours-summary-card strong {
+  display: inline-block;
+  margin-top: .35rem;
+  font-size: 1.3rem;
+  letter-spacing: -.01em;
+}
+.hours-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: .2rem .5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: .75rem;
+  font-weight: 700;
+}
+.hours-status.is-open {
+  border-color: #d97706;
+  background: #fef3c7;
+  color: #92400e;
+}
+.hours-status.is-closed {
+  border-color: #16a34a;
+  background: #dcfce7;
+  color: #166534;
+}
+.hours-calendar-card {
+  max-width: 1160px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.hours-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .4rem;
+}
+.hours-calendar-weekday {
+  padding: .45rem .3rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-muted);
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.hours-calendar-cell {
+  min-height: 70px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .45rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--panel);
+}
+.hours-calendar-cell.is-empty {
+  background: transparent;
+  border-style: dashed;
+  opacity: .5;
+}
+.hours-calendar-cell.has-events {
+  background: var(--panel-muted);
+}
+.hours-calendar-cell.is-open {
+  border-color: #f59e0b;
+}
+.hours-calendar-cell.is-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.hours-calendar-day {
+  font-size: .82rem;
+  color: var(--muted);
+}
+.hours-calendar-net {
+  font-size: .84rem;
+  font-weight: 700;
+}
 .today-card {
   max-width: 1080px;
   margin-left: auto;
@@ -1240,6 +1370,19 @@ body.layout-auth main > .card {
 }
 
 @media (max-width: 680px) {
+  .hours-filter-grid {
+    grid-template-columns: 1fr;
+  }
+  .hours-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .hours-calendar-grid {
+    gap: .28rem;
+  }
+  .hours-calendar-cell {
+    min-height: 58px;
+    padding: .35rem;
+  }
   .today-card .today-hero {
     flex-direction: column;
     gap: .7rem;

@@ -77,6 +77,15 @@ def test_rls_blocks_cross_tenant_reads():
                 """,
                 (employee_a, tenant_a, "Alice", employee_b, tenant_b, "Bob"),
             )
+            cur.execute(
+                """
+                INSERT INTO time_events (tenant_id, employee_id, ts, type, source)
+                VALUES
+                    (%s, %s, now(), 'IN', 'WEB'),
+                    (%s, %s, now(), 'IN', 'WEB')
+                """,
+                (tenant_a, employee_a, tenant_b, employee_b),
+            )
             conn.commit()
 
             with conn.transaction():
@@ -88,3 +97,11 @@ def test_rls_blocks_cross_tenant_reads():
                 cur.execute("SELECT COUNT(*) FROM employees WHERE tenant_id = %s", (tenant_b,))
                 forbidden_count = cur.fetchone()[0]
                 assert forbidden_count == 0
+
+                cur.execute("SELECT COUNT(*) FROM time_events")
+                visible_events = cur.fetchone()[0]
+                assert visible_events == 1
+
+                cur.execute("SELECT COUNT(*) FROM time_events WHERE tenant_id = %s", (tenant_b,))
+                forbidden_events = cur.fetchone()[0]
+                assert forbidden_events == 0

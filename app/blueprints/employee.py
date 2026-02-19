@@ -78,6 +78,14 @@ PUNCH_CORRECTION_STATUS_LABELS = {
     PunchCorrectionStatus.REJECTED: "Rechazada",
     PunchCorrectionStatus.CANCELLED: "Cancelada",
 }
+HOURS_PERIOD_OPTIONS = [
+    {"value": "day", "label": "Dia"},
+    {"value": "week", "label": "Semana"},
+    {"value": "month", "label": "Mes"},
+    {"value": "year", "label": "Ano"},
+    {"value": "custom", "label": "Rango"},
+]
+HOURS_PERIOD_PRESETS = {"day", "week", "month", "year"}
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
@@ -157,6 +165,287 @@ def _month_bounds_utc(year: int, month: int) -> tuple[datetime, datetime]:
     days_in_month = monthrange(year, month)[1]
     end = datetime(year=year, month=month, day=days_in_month, hour=23, minute=59, second=59, microsecond=999999, tzinfo=tz)
     return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _safe_iso_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _date_range_bounds_utc(start_day: date, end_day: date) -> tuple[datetime, datetime]:
+    tz = _app_timezone()
+    start_local = datetime.combine(start_day, time.min, tzinfo=tz)
+    end_local = datetime.combine(end_day, time.max, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _iter_days(start_day: date, end_day: date) -> list[date]:
+    total_days = (end_day - start_day).days
+    return [start_day + timedelta(days=offset) for offset in range(total_days + 1)]
+
+
+def _add_months(anchor: date, months_delta: int) -> date:
+    months_since_year_zero = (anchor.year * 12) + (anchor.month - 1) + months_delta
+    next_year = months_since_year_zero // 12
+    next_month = (months_since_year_zero % 12) + 1
+    last_day = monthrange(next_year, next_month)[1]
+    next_day = min(anchor.day, last_day)
+    return date(next_year, next_month, next_day)
+
+
+def _hours_range_for_preset(preset: str, anchor: date) -> tuple[date, date]:
+    if preset == "day":
+        return anchor, anchor
+
+    if preset == "week":
+        start_day = anchor - timedelta(days=anchor.weekday())
+        return start_day, start_day + timedelta(days=6)
+
+    if preset == "year":
+        start_day = date(anchor.year, 1, 1)
+        return start_day, date(anchor.year, 12, 31)
+
+    start_day = date(anchor.year, anchor.month, 1)
+    return start_day, date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+
+
+def _daily_is_open(events: list[TimeEvent]) -> bool:
+    open_presence = False
+    open_pause = False
+
+    for event in events:
+        if event.type == TimeEventType.IN:
+            open_presence = True
+            continue
+
+        if event.type == TimeEventType.OUT:
+            open_presence = False
+            open_pause = False
+            continue
+
+        if event.type == TimeEventType.BREAK_START:
+            open_pause = True
+            continue
+
+        if event.type == TimeEventType.BREAK_END:
+            open_pause = False
+
+    return open_presence or open_pause
+
+
+def _hours_selection_from_request(args, today_local: date) -> dict[str, object]:
+    selected_preset = (args.get("preset") or "month").strip().lower()
+    anchor = _safe_iso_date(args.get("anchor")) or today_local
+    if anchor > today_local:
+        anchor = today_local
+
+    raw_date_from = args.get("date_from", "")
+    raw_date_to = args.get("date_to", "")
+    custom_start = _safe_iso_date(raw_date_from)
+    custom_end = _safe_iso_date(raw_date_to)
+
+    if (selected_preset == "custom" or (custom_start and custom_end)) and custom_start and custom_end:
+        start_day, end_day = sorted((custom_start, custom_end))
+        return {
+            "preset": "custom",
+            "anchor": anchor,
+            "start_day": start_day,
+            "end_day": end_day,
+            "date_from_value": start_day.isoformat(),
+            "date_to_value": end_day.isoformat(),
+        }
+
+    if selected_preset not in HOURS_PERIOD_PRESETS:
+        selected_preset = "month"
+
+    start_day, end_day = _hours_range_for_preset(selected_preset, anchor)
+    return {
+        "preset": selected_preset,
+        "anchor": anchor,
+        "start_day": start_day,
+        "end_day": end_day,
+        "date_from_value": "",
+        "date_to_value": "",
+    }
+
+
+def _hours_nav_queries(selection: dict[str, object], today_local: date) -> dict[str, object]:
+    preset = str(selection["preset"])
+    anchor = selection["anchor"]
+    start_day = selection["start_day"]
+    end_day = selection["end_day"]
+    assert isinstance(anchor, date)
+    assert isinstance(start_day, date)
+    assert isinstance(end_day, date)
+
+    if preset == "custom":
+        span_days = (end_day - start_day).days + 1
+        prev_start = start_day - timedelta(days=span_days)
+        prev_end = end_day - timedelta(days=span_days)
+        next_start = start_day + timedelta(days=span_days)
+        next_end = end_day + timedelta(days=span_days)
+        return {
+            "prev_query": {
+                "preset": "custom",
+                "anchor": anchor.isoformat(),
+                "date_from": prev_start.isoformat(),
+                "date_to": prev_end.isoformat(),
+            },
+            "next_query": {
+                "preset": "custom",
+                "anchor": anchor.isoformat(),
+                "date_from": next_start.isoformat(),
+                "date_to": next_end.isoformat(),
+            },
+            "can_go_next": next_start <= today_local,
+        }
+
+    if preset == "day":
+        prev_anchor = anchor - timedelta(days=1)
+        next_anchor = anchor + timedelta(days=1)
+    elif preset == "week":
+        prev_anchor = anchor - timedelta(days=7)
+        next_anchor = anchor + timedelta(days=7)
+    elif preset == "year":
+        prev_year = anchor.year - 1
+        next_year = anchor.year + 1
+        prev_day = min(anchor.day, monthrange(prev_year, anchor.month)[1])
+        next_day = min(anchor.day, monthrange(next_year, anchor.month)[1])
+        prev_anchor = date(prev_year, anchor.month, prev_day)
+        next_anchor = date(next_year, anchor.month, next_day)
+    else:
+        prev_anchor = _add_months(anchor, -1)
+        next_anchor = _add_months(anchor, 1)
+
+    next_start_day, _ = _hours_range_for_preset(preset, next_anchor)
+    return {
+        "prev_query": {"preset": preset, "anchor": prev_anchor.isoformat()},
+        "next_query": {"preset": preset, "anchor": next_anchor.isoformat()},
+        "can_go_next": next_start_day <= today_local,
+    }
+
+
+def _hours_calendar_payload(
+    rows: list[dict[str, object]],
+    start_day: date,
+    end_day: date,
+    today_local: date,
+) -> dict[str, object] | None:
+    if start_day.year != end_day.year or start_day.month != end_day.month:
+        return None
+
+    first_day = date(start_day.year, start_day.month, 1)
+    days_in_month = monthrange(start_day.year, start_day.month)[1]
+    weekday_offset = first_day.weekday()
+    rows_by_day = {str(row["date"]): row for row in rows}
+
+    cells: list[dict[str, object] | None] = [None] * weekday_offset
+    for day_number in range(1, days_in_month + 1):
+        cell_day = date(start_day.year, start_day.month, day_number)
+        day_key = cell_day.isoformat()
+        row = rows_by_day.get(day_key)
+        has_events = bool(row and (row["in_out"] or row["pauses"]))
+        cells.append(
+            {
+                "day_number": day_number,
+                "date": day_key,
+                "is_today": cell_day == today_local,
+                "is_open": bool(row and row["is_open"]),
+                "has_events": has_events,
+                "net_display": str(row["net_display"]) if row and has_events else "--:--",
+            }
+        )
+
+    while len(cells) % 7 != 0:
+        cells.append(None)
+
+    return {
+        "month_label": first_day.strftime("%B %Y"),
+        "weekdays": ["L", "M", "X", "J", "V", "S", "D"],
+        "weeks": [cells[index : index + 7] for index in range(0, len(cells), 7)],
+    }
+
+
+def _build_hours_payload(employee: Employee, args) -> dict[str, object]:
+    today_local = datetime.now(_app_timezone()).date()
+    selection = _hours_selection_from_request(args, today_local)
+    start_day = selection["start_day"]
+    end_day = selection["end_day"]
+    assert isinstance(start_day, date)
+    assert isinstance(end_day, date)
+
+    start_utc, end_utc = _date_range_bounds_utc(start_day, end_day)
+    events_stmt = visible_employee_events_between_stmt(employee.id, start_utc, end_utc)
+    period_events = list(db.session.execute(events_stmt).scalars().all())
+
+    events_by_day: dict[date, list[TimeEvent]] = {}
+    for event in period_events:
+        events_by_day.setdefault(_to_app_tz(event.ts).date(), []).append(event)
+
+    rows: list[dict[str, object]] = []
+    total_worked = 0
+    total_paused = 0
+    total_net = 0
+
+    for current_day in _iter_days(start_day, end_day):
+        day_events = events_by_day.get(current_day, [])
+        worked_minutes, _, _ = _daily_worked_minutes(day_events)
+        paused_minutes, pause_pairs = _daily_pause_minutes(day_events)
+        net_minutes = worked_minutes - paused_minutes
+        total_worked += worked_minutes
+        total_paused += paused_minutes
+        total_net += net_minutes
+
+        rows.append(
+            {
+                "date": current_day.isoformat(),
+                "label": current_day.strftime("%d/%m/%Y"),
+                "in_out": _daily_punch_markers(day_events),
+                "pauses": pause_pairs,
+                "worked_minutes": worked_minutes,
+                "paused_minutes": paused_minutes,
+                "net_minutes": net_minutes,
+                "worked_display": _minutes_to_hhmm(worked_minutes),
+                "paused_display": _minutes_to_hhmm(paused_minutes),
+                "net_display": _minutes_to_hhmm(net_minutes),
+                "is_open": _daily_is_open(day_events),
+            }
+        )
+
+    nav_data = _hours_nav_queries(selection, today_local)
+    calendar = _hours_calendar_payload(rows, start_day, end_day, today_local)
+    preset = str(selection["preset"])
+
+    return {
+        "preset": preset,
+        "period_options": HOURS_PERIOD_OPTIONS,
+        "anchor": selection["anchor"].isoformat(),
+        "date_from_value": selection["date_from_value"],
+        "date_to_value": selection["date_to_value"],
+        "period_start": start_day.isoformat(),
+        "period_end": end_day.isoformat(),
+        "period_label": f"{start_day.strftime('%d/%m/%Y')} - {end_day.strftime('%d/%m/%Y')}",
+        "days": rows,
+        "totals": {
+            "worked_minutes": total_worked,
+            "paused_minutes": total_paused,
+            "net_minutes": total_net,
+            "worked_display": _minutes_to_hhmm(total_worked),
+            "paused_display": _minutes_to_hhmm(total_paused),
+            "net_display": _minutes_to_hhmm(total_net),
+        },
+        "calendar": calendar,
+        "can_go_next": bool(nav_data["can_go_next"]),
+        "prev_query": nav_data["prev_query"],
+        "next_query": nav_data["next_query"],
+        "prev_url": url_for("employee.me_hours", **nav_data["prev_query"]),
+        "next_url": url_for("employee.me_hours", **nav_data["next_query"]),
+        "today": today_local.isoformat(),
+    }
 
 
 def _tenant_shift(tenant_id: uuid.UUID) -> Shift | None:
@@ -623,6 +912,25 @@ def me_today():
         leave_policy_balances=leave_policy_balances,
         work_balance_summary=work_balance_summary,
     )
+
+
+@bp.get("/me/hours")
+@login_required
+@tenant_required
+@employee_self_service_required
+def me_hours():
+    employee = _employee_for_current_user()
+    payload = _build_hours_payload(employee, request.args)
+    return render_template("employee/hours.html", employee=employee, **payload)
+
+
+@bp.get("/me/hours/data")
+@login_required
+@tenant_required
+@employee_self_service_required
+def me_hours_data():
+    employee = _employee_for_current_user()
+    return _build_hours_payload(employee, request.args)
 
 
 @bp.post("/me/pause/toggle")
