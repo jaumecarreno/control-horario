@@ -15,7 +15,15 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.extensions import db
-from app.forms import DateRangeExportForm, EmployeeCreateForm, EmployeeEditForm, ShiftCreateForm, UserCreateForm, UserEditForm
+from app.forms import (
+    AdminResetPasswordForm,
+    DateRangeExportForm,
+    EmployeeCreateForm,
+    EmployeeEditForm,
+    ShiftCreateForm,
+    UserCreateForm,
+    UserEditForm,
+)
 from app.models import (
     Employee,
     EmployeeShiftAssignment,
@@ -590,6 +598,48 @@ def users_edit(user_id: UUID):
         return redirect(url_for("admin.users_list"))
 
     return render_template("admin/user_edit.html", form=form, user=user)
+
+
+
+@bp.route("/admin/users/<uuid:user_id>/reset-password", methods=["GET", "POST"])
+@login_required
+@tenant_required
+@roles_required(ADMIN_ROLES)
+def users_reset_password(user_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    row = db.session.execute(
+        select(Membership, User)
+        .join(User, User.id == Membership.user_id)
+        .where(Membership.tenant_id == tenant_id, Membership.user_id == user_id)
+    ).one_or_none()
+    if row is None:
+        abort(404)
+    membership, user = row
+
+    form = AdminResetPasswordForm()
+    if form.validate_on_submit():
+        user.password_hash = hash_secret(form.temporary_password.data)
+        user.must_change_password = True
+        db.session.flush()
+
+        log_audit(
+            action="USER_PASSWORD_RESET",
+            entity_type="users",
+            entity_id=user.id,
+            payload={
+                "user_id": str(user.id),
+                "membership_role": membership.role.value,
+                "must_change_password": True,
+            },
+        )
+        db.session.commit()
+        flash("Contraseña temporal establecida. El usuario deberá cambiarla al iniciar sesión.", "success")
+        return redirect(url_for("admin.users_list"))
+
+    return render_template("admin/user_reset_password.html", form=form, user=user)
 
 
 @bp.get("/admin/employees")
