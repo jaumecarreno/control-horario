@@ -6,6 +6,7 @@ from datetime import date
 from uuid import UUID
 
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileField
 from wtforms import (
     BooleanField,
     DateField,
@@ -123,6 +124,8 @@ class LeaveRequestForm(FlaskForm):
     type_id = SelectField("Vacacion / permiso", choices=[], validators=[DataRequired()], coerce=str)
     date_from = DateField("Desde", validators=[DataRequired()])
     date_to = DateField("Hasta", validators=[DataRequired()])
+    reason = TextAreaField("Motivo", validators=[DataRequired(), Length(min=10, max=500)])
+    attachment = FileField("Adjunto (opcional)")
     minutes = IntegerField("Minutos (opcional)", validators=[Optional()])
     submit = SubmitField("Enviar solicitud")
 
@@ -142,6 +145,7 @@ class PunchCorrectionRequestForm(FlaskForm):
         validators=[DataRequired()],
     )
     reason = TextAreaField("Motivo", validators=[DataRequired(), Length(min=10, max=300)])
+    attachment = FileField("Adjunto (opcional)")
     submit = SubmitField("Enviar solicitud")
 
     def validate_source_event_id(self, field: StringField) -> None:

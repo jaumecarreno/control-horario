@@ -62,6 +62,12 @@
       </article>
     </div>
 
+    {% if open_shift_started %}
+      <div class="flash warning" style="margin-bottom: .9rem;">
+        Aviso: tienes una jornada abierta desde {{ open_shift_started }}.
+      </div>
+    {% endif %}
+
     <table>
       <thead>
         <tr>

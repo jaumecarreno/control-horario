@@ -119,6 +119,8 @@
           <th>Nuevo fichaje</th>
           <th>Estado</th>
           <th>Motivo</th>
+          <th>Comentario manager</th>
+          <th>Adjunto</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -130,6 +132,14 @@
             <td>{{ to_app_tz(correction_request.requested_ts).strftime('%d/%m/%Y %H:%M') }} {{ correction_request.requested_type.value }}</td>
             <td>{{ punch_correction_status_labels.get(correction_request.status, correction_request.status.value) }}</td>
             <td>{{ correction_request.reason }}</td>
+            <td>{{ correction_request.approver_comment or '-' }}</td>
+            <td>
+              {% if correction_request.attachment_name %}
+                <a href="{{ url_for('employee.punch_correction_attachment_download', correction_request_id=correction_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td>
               {% if correction_request.status.value == "REQUESTED" %}
                 <form class="inline" method="post" action="{{ url_for('employee.punch_correction_request_cancel', correction_request_id=correction_request.id) }}">
@@ -143,7 +153,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="6">Aun no hay solicitudes de rectificacion.</td></tr>
+          <tr><td colspan="8">Aun no hay solicitudes de rectificacion.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -157,7 +167,7 @@
       </div>
       <p class="muted" style="margin: .5rem 0 1rem;">Fichaje original: <strong id="punch-correction-source-label">-</strong></p>
 
-      <form method="post" action="{{ url_for('employee.punch_correction_request_create') }}">
+      <form method="post" action="{{ url_for('employee.punch_correction_request_create') }}" enctype="multipart/form-data">
         {{ punch_correction_form.hidden_tag() }}
         <input type="hidden" name="return_month" value="{{ selected_month }}">
         {{ punch_correction_form.source_event_id(id='punch-correction-source-event-id', type='hidden') }}
@@ -182,6 +192,9 @@
         <label for="{{ punch_correction_form.reason.id }}">Motivo</label>
         {{ punch_correction_form.reason(id='punch-correction-reason', rows='3') }}
 
+        <label for="{{ punch_correction_form.attachment.id }}">Adjunto (PDF o imagen, max. 5MB)</label>
+        {{ punch_correction_form.attachment(id='punch-correction-attachment', accept='.pdf,.jpg,.jpeg,.png,.webp') }}
+
         <div class="incident-actions">
           <button type="button" class="incident-cancel" id="cancel-punch-correction-modal">Cancelar</button>
           <button type="submit" class="incident-send">Enviar solicitud</button>
@@ -200,6 +213,7 @@
       const requestedMinuteInput = document.getElementById("punch-correction-requested-minute");
       const requestedKindInput = document.getElementById("punch-correction-requested-kind");
       const reasonInput = document.getElementById("punch-correction-reason");
+      const attachmentInput = document.getElementById("punch-correction-attachment");
 
       function openModal() {
         if (!modal) return;
@@ -222,6 +236,7 @@
           if (requestedMinuteInput) requestedMinuteInput.value = button.dataset.eventMinute || "";
           if (requestedKindInput) requestedKindInput.value = button.dataset.eventKind || "IN";
           if (reasonInput) reasonInput.value = "";
+          if (attachmentInput) attachmentInput.value = "";
           openModal();
         });
       });

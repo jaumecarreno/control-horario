@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+import io
 
 from sqlalchemy import func, select
 
@@ -112,6 +113,7 @@ def test_me_leaves_creates_requested_leave_and_audit_record(client, app):
             "type_id": str(policy_id),
             "date_from": "2026-02-10",
             "date_to": "2026-02-12",
+            "reason": "Necesito ausentarme por una gestion personal.",
             "minutes": "",
         },
         follow_redirects=True,
@@ -127,6 +129,7 @@ def test_me_leaves_creates_requested_leave_and_audit_record(client, app):
         assert leave_request.status == LeaveRequestStatus.REQUESTED
         assert leave_request.type_id == leave_type_id
         assert leave_request.leave_policy_id == policy_id
+        assert leave_request.reason == "Necesito ausentarme por una gestion personal."
 
         audit = db.session.execute(
             select(AuditLog).where(AuditLog.action == "LEAVE_REQUESTED").order_by(AuditLog.ts.desc())
@@ -134,6 +137,50 @@ def test_me_leaves_creates_requested_leave_and_audit_record(client, app):
         assert audit.payload_json["employee_id"] == str(employee_id)
         assert audit.payload_json["leave_policy_id"] == str(policy_id)
         assert audit.payload_json["status"] == LeaveRequestStatus.REQUESTED.value
+
+
+def test_me_leaves_stores_attachment_and_allows_download(client, app):
+    response = _login_owner(client)
+    assert response.status_code == 302
+    _select_tenant(client, "tenant-a")
+
+    with app.app_context():
+        employee, _, policy = _create_leave_policy_for_owner()
+        employee_id = employee.id
+        policy_id = policy.id
+
+    submit = client.post(
+        "/me/leaves",
+        data={
+            "type_id": str(policy_id),
+            "date_from": "2026-02-18",
+            "date_to": "2026-02-18",
+            "reason": "Adjunto justificante medico para esta ausencia.",
+            "minutes": "",
+            "attachment": (io.BytesIO(b"%PDF-1.4 justificante"), "justificante.pdf"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert submit.status_code == 200
+    html = submit.get_data(as_text=True)
+    assert "Solicitud registrada." in html
+
+    with app.app_context():
+        leave_request = db.session.execute(
+            select(LeaveRequest)
+            .where(LeaveRequest.employee_id == employee_id, LeaveRequest.leave_policy_id == policy_id)
+            .order_by(LeaveRequest.created_at.desc())
+        ).scalar_one()
+        leave_request_id = leave_request.id
+        assert leave_request.attachment_name == "justificante.pdf"
+        assert leave_request.attachment_mime == "application/pdf"
+        assert leave_request.reason == "Adjunto justificante medico para esta ausencia."
+
+    download = client.get(f"/me/leaves/{leave_request_id}/attachment", follow_redirects=False)
+    assert download.status_code == 200
+    assert download.headers["Content-Type"].startswith("application/pdf")
+    assert download.data.startswith(b"%PDF-1.4")
 
 
 def test_employee_navigation_has_leave_sections_link(client):
@@ -172,6 +219,7 @@ def test_me_leaves_requires_minutes_for_hour_policies(client, app):
             "type_id": str(policy_id),
             "date_from": "2026-02-10",
             "date_to": "2026-02-10",
+            "reason": "Solicitud de permiso por cita medica puntual.",
             "minutes": "",
         },
         follow_redirects=True,
@@ -199,6 +247,7 @@ def test_me_leaves_rejects_dates_outside_policy_range(client, app):
             "type_id": str(policy_id),
             "date_from": "2026-04-05",
             "date_to": "2026-04-06",
+            "reason": "Necesito gestionar unos tramites fuera del rango.",
             "minutes": "",
         },
         follow_redirects=True,
@@ -237,6 +286,7 @@ def test_me_leaves_rejects_when_pending_plus_requested_exceeds_balance(client, a
             "type_id": str(policy_id),
             "date_from": "2026-02-10",
             "date_to": "2026-02-11",
+            "reason": "Necesito dos dias para asuntos familiares.",
             "minutes": "",
         },
         follow_redirects=True,
@@ -281,6 +331,7 @@ def test_me_leaves_rejects_overlapping_active_requests(client, app):
             "type_id": str(policy_id),
             "date_from": "2026-02-12",
             "date_to": "2026-02-14",
+            "reason": "Solicitud adicional que se solapa con otra previa.",
             "minutes": "",
         },
         follow_redirects=True,
@@ -394,6 +445,7 @@ def _create_admin_pending_leave_request(*, tenant_slug: str = "admin-tenant") ->
         leave_policy_id=None,
         date_from=date(2026, 2, 1),
         date_to=date(2026, 2, 3),
+        reason="Solicitud de ausencia para atender una cita personal.",
         minutes=None,
         status=LeaveRequestStatus.REQUESTED,
     )
@@ -412,6 +464,7 @@ def test_admin_approval_updates_status_and_audit(admin_only_client):
 
     approve = admin_only_client.post(
         f"/admin/approvals/{leave_request_id}/approve",
+        data={"comment": "Aprobada con justificante validado por manager."},
         follow_redirects=True,
     )
     assert approve.status_code == 200
@@ -424,12 +477,14 @@ def test_admin_approval_updates_status_and_audit(admin_only_client):
         assert refreshed.status == LeaveRequestStatus.APPROVED
         assert refreshed.decided_at is not None
         assert refreshed.approver_user_id is not None
+        assert refreshed.approver_comment == "Aprobada con justificante validado por manager."
 
         audit = db.session.execute(
             select(AuditLog).where(AuditLog.action == "LEAVE_APPROVED").order_by(AuditLog.ts.desc())
         ).scalar_one()
         assert audit.payload_json["employee_id"] == str(refreshed.employee_id)
         assert audit.payload_json["status"] == LeaveRequestStatus.APPROVED.value
+        assert audit.payload_json["approver_comment"] == "Aprobada con justificante validado por manager."
 
 
 def test_admin_navigation_has_approvals_link(admin_only_client):

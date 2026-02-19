@@ -11,6 +11,7 @@
           <th>Fichaje original</th>
           <th>Nuevo fichaje</th>
           <th>Motivo</th>
+          <th>Adjunto</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -22,18 +23,27 @@
             <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
             <td>{{ correction_request.reason }}</td>
             <td>
+              {% if correction_request.attachment_name %}
+                <a href="{{ url_for('admin.punch_correction_attachment_download', correction_request_id=correction_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
               <form class="inline" method="post" action="{{ url_for('admin.punch_correction_approve', correction_request_id=correction_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit">Aprobar</button>
               </form>
               <form class="inline" method="post" action="{{ url_for('admin.punch_correction_reject', correction_request_id=correction_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit" class="danger">Rechazar</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No hay rectificaciones pendientes.</td></tr>
+          <tr><td colspan="6">No hay rectificaciones pendientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -50,6 +60,8 @@
           <th>Nuevo fichaje</th>
           <th>Estado</th>
           <th>Motivo</th>
+          <th>Comentario manager</th>
+          <th>Adjunto</th>
         </tr>
       </thead>
       <tbody>
@@ -61,9 +73,17 @@
             <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
             <td>{{ punch_correction_status_labels.get(correction_request.status, correction_request.status.value) }}</td>
             <td>{{ correction_request.reason }}</td>
+            <td>{{ correction_request.approver_comment or '-' }}</td>
+            <td>
+              {% if correction_request.attachment_name %}
+                <a href="{{ url_for('admin.punch_correction_attachment_download', correction_request_id=correction_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
           </tr>
         {% else %}
-          <tr><td colspan="6">Sin historico todavia.</td></tr>
+          <tr><td colspan="8">Sin historico todavia.</td></tr>
         {% endfor %}
       </tbody>
     </table>

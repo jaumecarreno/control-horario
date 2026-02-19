@@ -80,6 +80,25 @@ def test_duplicate_punch_requires_confirmation(client):
     assert _event_count() == 2
 
 
+def test_open_shift_warning_is_visible_in_today_and_hours(client):
+    response = _login(client)
+    assert response.status_code == 302
+    _select_tenant_a(client)
+
+    create_entry = client.post("/me/punch/in", headers={"HX-Request": "true"})
+    assert create_entry.status_code == 200
+
+    today_page = client.get("/me/today")
+    assert today_page.status_code == 200
+    today_html = today_page.get_data(as_text=True)
+    assert "Tienes una jornada abierta desde" in today_html
+
+    hours_page = client.get("/me/hours")
+    assert hours_page.status_code == 200
+    hours_html = hours_page.get_data(as_text=True)
+    assert "Aviso: tienes una jornada abierta desde" in hours_html
+
+
 def test_manual_incident_creates_event_and_is_visible_in_presence(client):
     response = _login(client)
     assert response.status_code == 302

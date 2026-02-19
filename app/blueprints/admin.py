@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, time, timedelta, timezone
+import io
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -1531,6 +1532,9 @@ def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
     if leave_request.status != LeaveRequestStatus.REQUESTED:
         abort(409, description="La solicitud ya fue decidida.")
 
+    decision_comment = (request.form.get("comment") or "").strip()
+    if decision_comment:
+        leave_request.approver_comment = decision_comment
     leave_request.status = status
     leave_request.approver_user_id = UUID(current_user.get_id())
     leave_request.decided_at = datetime.now(timezone.utc)
@@ -1544,6 +1548,10 @@ def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
             "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
             "date_from": leave_request.date_from.isoformat(),
             "date_to": leave_request.date_to.isoformat(),
+            "reason": leave_request.reason,
+            "approver_comment": leave_request.approver_comment,
+            "has_attachment": bool(leave_request.attachment_blob),
+            "attachment_name": leave_request.attachment_name,
             "minutes": leave_request.minutes,
             "status": leave_request.status.value,
         },
@@ -1571,6 +1579,34 @@ def approval_approve(leave_request_id: UUID):
 @approve_leaves_required
 def approval_reject(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.REJECTED)
+
+
+@bp.get("/admin/approvals/<uuid:leave_request_id>/attachment")
+@login_required
+@tenant_required
+@approve_leaves_required
+def approval_leave_attachment_download(leave_request_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    leave_request = db.session.execute(
+        select(LeaveRequest).where(
+            LeaveRequest.id == leave_request_id,
+            LeaveRequest.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if leave_request is None or leave_request.attachment_blob is None:
+        abort(404)
+
+    download_name = leave_request.attachment_name or "adjunto-ausencia"
+    mime_type = leave_request.attachment_mime or "application/octet-stream"
+    return send_file(
+        io.BytesIO(leave_request.attachment_blob),
+        mimetype=mime_type,
+        as_attachment=True,
+        download_name=download_name,
+    )
 
 
 @bp.get("/admin/punch-corrections")
@@ -1663,6 +1699,7 @@ def _decide_punch_correction(correction_request_id: UUID, status: PunchCorrectio
     if already_superseded is not None:
         abort(409, description="El fichaje ya fue rectificado.")
 
+    decision_comment = (request.form.get("comment") or "").strip()
     replacement_event_id: UUID | None = None
     if status == PunchCorrectionStatus.APPROVED:
         replacement_event = TimeEvent(
@@ -1691,6 +1728,8 @@ def _decide_punch_correction(correction_request_id: UUID, status: PunchCorrectio
         )
 
     correction_request.status = status
+    if decision_comment:
+        correction_request.approver_comment = decision_comment
     correction_request.approver_user_id = actor_user_id
     correction_request.applied_event_id = replacement_event_id
     correction_request.decided_at = datetime.now(timezone.utc)
@@ -1704,6 +1743,10 @@ def _decide_punch_correction(correction_request_id: UUID, status: PunchCorrectio
             "requested_ts": correction_request.requested_ts.isoformat(),
             "requested_type": correction_request.requested_type.value,
             "status": correction_request.status.value,
+            "reason": correction_request.reason,
+            "approver_comment": correction_request.approver_comment,
+            "has_attachment": bool(correction_request.attachment_blob),
+            "attachment_name": correction_request.attachment_name,
             "target_approver_user_id": (
                 str(correction_request.target_approver_user_id)
                 if correction_request.target_approver_user_id
@@ -1735,6 +1778,34 @@ def punch_correction_approve(correction_request_id: UUID):
 @approve_punch_corrections_required
 def punch_correction_reject(correction_request_id: UUID):
     return _decide_punch_correction(correction_request_id, PunchCorrectionStatus.REJECTED)
+
+
+@bp.get("/admin/punch-corrections/<uuid:correction_request_id>/attachment")
+@login_required
+@tenant_required
+@approve_punch_corrections_required
+def punch_correction_attachment_download(correction_request_id: UUID):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    correction_request = db.session.execute(
+        select(PunchCorrectionRequest).where(
+            PunchCorrectionRequest.id == correction_request_id,
+            PunchCorrectionRequest.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
+    if correction_request is None or correction_request.attachment_blob is None:
+        abort(404)
+
+    download_name = correction_request.attachment_name or "adjunto-rectificacion"
+    mime_type = correction_request.attachment_mime or "application/octet-stream"
+    return send_file(
+        io.BytesIO(correction_request.attachment_blob),
+        mimetype=mime_type,
+        as_attachment=True,
+        download_name=download_name,
+    )
 
 
 @bp.get("/admin/reports/payroll")

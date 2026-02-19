@@ -11,6 +11,8 @@
           <th>Tipo</th>
           <th>Desde</th>
           <th>Hasta</th>
+          <th>Motivo</th>
+          <th>Adjunto</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -21,19 +23,29 @@
             <td>{{ leave_type.code }}</td>
             <td>{{ leave_request.date_from }}</td>
             <td>{{ leave_request.date_to }}</td>
+            <td>{{ leave_request.reason }}</td>
+            <td>
+              {% if leave_request.attachment_name %}
+                <a href="{{ url_for('admin.approval_leave_attachment_download', leave_request_id=leave_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td>
               <form class="inline" method="post" action="{{ url_for('admin.approval_approve', leave_request_id=leave_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit">Aprobar</button>
               </form>
               <form class="inline" method="post" action="{{ url_for('admin.approval_reject', leave_request_id=leave_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit" class="danger">Rechazar</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No hay solicitudes pendientes.</td></tr>
+          <tr><td colspan="7">No hay solicitudes pendientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -48,6 +60,7 @@
           <th>Fichaje original</th>
           <th>Nuevo fichaje</th>
           <th>Motivo</th>
+          <th>Adjunto</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -59,18 +72,27 @@
             <td>{{ correction_request.requested_ts }} {{ correction_request.requested_type.value }}</td>
             <td>{{ correction_request.reason }}</td>
             <td>
+              {% if correction_request.attachment_name %}
+                <a href="{{ url_for('admin.punch_correction_attachment_download', correction_request_id=correction_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td>
               <form class="inline" method="post" action="{{ url_for('admin.punch_correction_approve', correction_request_id=correction_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit">Aprobar</button>
               </form>
               <form class="inline" method="post" action="{{ url_for('admin.punch_correction_reject', correction_request_id=correction_request.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="text" name="comment" placeholder="Comentario (opcional)">
                 <button type="submit" class="danger">Rechazar</button>
               </form>
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="5">No hay rectificaciones pendientes.</td></tr>
+          <tr><td colspan="6">No hay rectificaciones pendientes.</td></tr>
         {% endfor %}
       </tbody>
     </table>

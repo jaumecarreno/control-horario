@@ -10,7 +10,7 @@
     {% else %}
       <p class="muted" style="margin-top:-.35rem;">Sin turno activo.</p>
     {% endif %}
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
       {{ form.hidden_tag() }}
       <label for="{{ form.type_id.id }}">{{ form.type_id.label.text }}</label>
       {{ form.type_id() }}
@@ -18,8 +18,12 @@
       {{ form.date_from() }}
       <label for="{{ form.date_to.id }}">Hasta</label>
       {{ form.date_to() }}
+      <label for="{{ form.reason.id }}">Motivo</label>
+      {{ form.reason(rows="3", placeholder="Describe el motivo de la ausencia...") }}
       <label for="{{ form.minutes.id }}">Minutos</label>
       {{ form.minutes() }}
+      <label for="{{ form.attachment.id }}">Adjunto (PDF o imagen, max. 5MB)</label>
+      {{ form.attachment(accept=".pdf,.jpg,.jpeg,.png,.webp") }}
       {% if available_policies %}
         <div style="margin-top: 1rem;">{{ form.submit() }}</div>
       {% else %}
@@ -38,7 +42,10 @@
           <th>Tipo</th>
           <th>Desde</th>
           <th>Hasta</th>
+          <th>Motivo</th>
           <th>Estado</th>
+          <th>Comentario manager</th>
+          <th>Adjunto</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -49,7 +56,16 @@
             <td>{{ leave_type.code }}</td>
             <td>{{ leave_request.date_from }}</td>
             <td>{{ leave_request.date_to }}</td>
+            <td>{{ leave_request.reason }}</td>
             <td>{{ leave_status_labels.get(leave_request.status, leave_request.status.value) }}</td>
+            <td>{{ leave_request.approver_comment or '-' }}</td>
+            <td>
+              {% if leave_request.attachment_name %}
+                <a href="{{ url_for('employee.leave_attachment_download', leave_request_id=leave_request.id) }}">Descargar</a>
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td>
               {% if leave_request.status.value == "REQUESTED" %}
                 <form class="inline" method="post" action="{{ url_for('employee.leave_cancel', leave_request_id=leave_request.id) }}">
@@ -62,7 +78,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="6">Aun no hay solicitudes.</td></tr>
+          <tr><td colspan="9">Aun no hay solicitudes.</td></tr>
         {% endfor %}
       </tbody>
     </table>

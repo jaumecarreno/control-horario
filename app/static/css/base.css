@@ -269,6 +269,10 @@ body.layout-guest main {
   gap: .5rem;
   align-items: center;
 }
+.inline input[type="text"] {
+  width: auto;
+  min-width: 12rem;
+}
 .card > nav.inline {
   display: inline-flex;
   gap: .35rem;

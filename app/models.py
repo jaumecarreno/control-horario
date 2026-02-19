@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -247,6 +248,10 @@ class PunchCorrectionRequest(db.Model):
     requested_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     requested_type: Mapped[TimeEventType] = mapped_column(Enum(TimeEventType, name="time_event_type"), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    approver_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attachment_blob: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     status: Mapped[PunchCorrectionStatus] = mapped_column(
         Enum(PunchCorrectionStatus, name="punch_correction_status"),
         nullable=False,
@@ -354,6 +359,11 @@ class LeaveRequest(db.Model):
     )
     date_from: Mapped[date] = mapped_column(Date, nullable=False)
     date_to: Mapped[date] = mapped_column(Date, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    approver_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attachment_blob: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, deferred=True)
     minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[LeaveRequestStatus] = mapped_column(
         Enum(LeaveRequestStatus, name="leave_request_status"),

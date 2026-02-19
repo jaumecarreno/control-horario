@@ -1,4 +1,10 @@
 <div id="punch-state" data-current-state="{{ current_state }}">
+  {% if open_shift_started %}
+    <div class="flash warning" style="margin-bottom:1rem;">
+      Tienes una jornada abierta desde {{ open_shift_started.strftime('%d/%m/%Y %H:%M') }}. Recuerda registrar la salida.
+    </div>
+  {% endif %}
+
   <article class="work-balance-card" aria-label="Resumen de balance">
     <div class="work-balance-top">
       <h3>Balance de horas</h3>

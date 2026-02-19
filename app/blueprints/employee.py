@@ -5,13 +5,17 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+import io
+import mimetypes
+from pathlib import Path
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
+from werkzeug.utils import secure_filename
 
 from app.audit import log_audit
 from app.authorization import employee_self_service_required, manual_punch_required
@@ -86,6 +90,9 @@ HOURS_PERIOD_OPTIONS = [
     {"value": "custom", "label": "Rango"},
 ]
 HOURS_PERIOD_PRESETS = {"day", "week", "month", "year"}
+REQUEST_ATTACHMENT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+REQUEST_ATTACHMENT_ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+REQUEST_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 
 
 def _today_bounds_utc() -> tuple[datetime, datetime]:
@@ -235,6 +242,47 @@ def _daily_is_open(events: list[TimeEvent]) -> bool:
             open_pause = False
 
     return open_presence or open_pause
+
+
+def _open_shift_started_at(events: list[TimeEvent]) -> datetime | None:
+    for event in reversed(events):
+        if event.type == TimeEventType.OUT:
+            return None
+        if event.type == TimeEventType.IN:
+            return _to_app_tz(event.ts)
+    return None
+
+
+def _extract_optional_attachment():
+    file_storage = request.files.get("attachment")
+    if file_storage is None or not (file_storage.filename or "").strip():
+        return None, None, None, None
+
+    raw_filename = secure_filename((file_storage.filename or "").strip())
+    if not raw_filename:
+        return None, None, None, "Nombre de adjunto invalido."
+
+    extension = Path(raw_filename).suffix.lower()
+    if extension not in REQUEST_ATTACHMENT_ALLOWED_EXTENSIONS:
+        return None, None, None, "El adjunto debe ser PDF o imagen JPG/PNG/WEBP."
+
+    mime_type = (file_storage.mimetype or "").strip().lower()
+    guessed_mime, _ = mimetypes.guess_type(raw_filename)
+    guessed_mime = (guessed_mime or "").lower()
+    if not mime_type:
+        mime_type = guessed_mime
+    if mime_type not in REQUEST_ATTACHMENT_ALLOWED_MIME and guessed_mime in REQUEST_ATTACHMENT_ALLOWED_MIME:
+        mime_type = guessed_mime
+    if mime_type not in REQUEST_ATTACHMENT_ALLOWED_MIME:
+        return None, None, None, "Tipo de adjunto no permitido. Solo PDF o imagen."
+
+    payload = file_storage.read()
+    if not payload:
+        return None, None, None, "El adjunto no puede estar vacio."
+    if len(payload) > REQUEST_ATTACHMENT_MAX_BYTES:
+        return None, None, None, "El adjunto supera el maximo permitido de 5MB."
+
+    return raw_filename, mime_type, payload, None
 
 
 def _hours_selection_from_request(args, today_local: date) -> dict[str, object]:
@@ -419,6 +467,9 @@ def _build_hours_payload(employee: Employee, args) -> dict[str, object]:
     nav_data = _hours_nav_queries(selection, today_local)
     calendar = _hours_calendar_payload(rows, start_day, end_day, today_local)
     preset = str(selection["preset"])
+    today_events = _todays_events(employee.id)
+    open_shift_started = _open_shift_started_at(today_events)
+    open_shift_started_display = open_shift_started.strftime("%d/%m/%Y %H:%M") if open_shift_started else None
 
     return {
         "preset": preset,
@@ -444,6 +495,7 @@ def _build_hours_payload(employee: Employee, args) -> dict[str, object]:
         "next_query": nav_data["next_query"],
         "prev_url": url_for("employee.me_hours", **nav_data["prev_query"]),
         "next_url": url_for("employee.me_hours", **nav_data["next_query"]),
+        "open_shift_started": open_shift_started_display,
         "today": today_local.isoformat(),
     }
 
@@ -864,6 +916,7 @@ def _enum_value(value: object, fallback: str = "") -> str:
 def _render_punch_state(employee: Employee):
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
+    open_shift_started = _open_shift_started_at(events)
     pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     today_local = datetime.now(_app_timezone()).date()
     active_shift = _current_shift_for_employee_day(employee, today_local)
@@ -880,6 +933,7 @@ def _render_punch_state(employee: Employee):
         pause_active=pause_active,
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
+        open_shift_started=open_shift_started,
         leave_policy_balances=leave_policy_balances,
         work_balance_summary=work_balance_summary,
     )
@@ -893,6 +947,7 @@ def me_today():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
     current_state = _current_presence_state(events)
+    open_shift_started = _open_shift_started_at(events)
     pause_active, running_pause_seconds, paused_today_minutes = _pause_summary(events)
     today_local = datetime.now(_app_timezone()).date()
     active_shift = _current_shift_for_employee_day(employee, today_local)
@@ -909,6 +964,7 @@ def me_today():
         pause_active=pause_active,
         running_pause_time=_seconds_to_hhmmss(running_pause_seconds),
         paused_today=_minutes_to_hhmm(paused_today_minutes),
+        open_shift_started=open_shift_started,
         leave_policy_balances=leave_policy_balances,
         work_balance_summary=work_balance_summary,
     )
@@ -1167,6 +1223,11 @@ def punch_correction_request_create():
         )
         return redirect(_presence_month_redirect(selected_month))
 
+    attachment_name, attachment_mime, attachment_blob, attachment_error = _extract_optional_attachment()
+    if attachment_error is not None:
+        flash(attachment_error, "danger")
+        return redirect(_presence_month_redirect(selected_month))
+
     correction_request = PunchCorrectionRequest(
         tenant_id=employee.tenant_id,
         employee_id=employee.id,
@@ -1174,6 +1235,9 @@ def punch_correction_request_create():
         requested_ts=requested_ts,
         requested_type=requested_type,
         reason=form.reason.data.strip(),
+        attachment_name=attachment_name,
+        attachment_mime=attachment_mime,
+        attachment_blob=attachment_blob,
         status=PunchCorrectionStatus.REQUESTED,
         target_approver_user_id=target_approver_user_id,
     )
@@ -1191,6 +1255,8 @@ def punch_correction_request_create():
             "requested_ts": requested_ts.isoformat(),
             "requested_type": requested_type.value,
             "reason": correction_request.reason,
+            "has_attachment": bool(correction_request.attachment_blob),
+            "attachment_name": correction_request.attachment_name,
             "target_approver_user_id": str(target_approver_user_id) if target_approver_user_id else None,
             "status": correction_request.status.value,
         },
@@ -1237,6 +1303,32 @@ def punch_correction_request_cancel(correction_request_id: uuid.UUID):
     db.session.commit()
     flash("Solicitud de rectificacion cancelada.", "success")
     return redirect(_presence_month_redirect(selected_month))
+
+
+@bp.get("/me/punch-corrections/<uuid:correction_request_id>/attachment")
+@login_required
+@tenant_required
+@employee_self_service_required
+def punch_correction_attachment_download(correction_request_id: uuid.UUID):
+    employee = _employee_for_current_user()
+    correction_request = db.session.execute(
+        select(PunchCorrectionRequest).where(
+            PunchCorrectionRequest.id == correction_request_id,
+            PunchCorrectionRequest.employee_id == employee.id,
+            PunchCorrectionRequest.tenant_id == employee.tenant_id,
+        )
+    ).scalar_one_or_none()
+    if correction_request is None or correction_request.attachment_blob is None:
+        abort(404)
+
+    download_name = correction_request.attachment_name or "adjunto-rectificacion"
+    mime_type = correction_request.attachment_mime or "application/octet-stream"
+    return send_file(
+        io.BytesIO(correction_request.attachment_blob),
+        mimetype=mime_type,
+        as_attachment=True,
+        download_name=download_name,
+    )
 
 
 @bp.get("/me/presence-control")
@@ -1517,6 +1609,11 @@ def me_leaves():
         if selected_policy is None:
             flash("Vacaciones o permiso invalido para tu turno actual.", "danger")
         else:
+            attachment_name, attachment_mime, attachment_blob, attachment_error = _extract_optional_attachment()
+            if attachment_error is not None:
+                flash(attachment_error, "danger")
+                return redirect(url_for("employee.me_leaves"))
+
             requested_from = form.date_from.data
             requested_to = form.date_to.data
             if requested_from < selected_policy.valid_from or requested_to > selected_policy.valid_to:
@@ -1552,6 +1649,10 @@ def me_leaves():
                             leave_policy_id=selected_policy.id,
                             date_from=requested_from,
                             date_to=requested_to,
+                            reason=form.reason.data.strip(),
+                            attachment_name=attachment_name,
+                            attachment_mime=attachment_mime,
+                            attachment_blob=attachment_blob,
                             minutes=form.minutes.data if selected_policy.unit == LeavePolicyUnit.HOURS else None,
                             status=LeaveRequestStatus.REQUESTED,
                         )
@@ -1568,6 +1669,9 @@ def me_leaves():
                                 "leave_policy_name": selected_policy.name,
                                 "date_from": requested_from.isoformat(),
                                 "date_to": requested_to.isoformat(),
+                                "reason": leave_request.reason,
+                                "has_attachment": bool(leave_request.attachment_blob),
+                                "attachment_name": leave_request.attachment_name,
                                 "minutes": leave_request.minutes,
                                 "status": leave_request.status.value,
                             },
@@ -1575,6 +1679,8 @@ def me_leaves():
                         db.session.commit()
                         flash("Solicitud registrada.", "success")
                         return redirect(url_for("employee.me_leaves"))
+    elif request.method == "POST":
+        flash("Solicitud invalida. Revisa motivo, fechas y minutos.", "danger")
 
     history_stmt = (
         select(LeaveRequest, LeaveType)
@@ -1591,6 +1697,32 @@ def me_leaves():
         active_shift=active_shift,
         available_policies=available_policies,
         leave_status_labels=LEAVE_STATUS_LABELS,
+    )
+
+
+@bp.get("/me/leaves/<uuid:leave_request_id>/attachment")
+@login_required
+@tenant_required
+@employee_self_service_required
+def leave_attachment_download(leave_request_id: uuid.UUID):
+    employee = _employee_for_current_user()
+    leave_request = db.session.execute(
+        select(LeaveRequest).where(
+            LeaveRequest.id == leave_request_id,
+            LeaveRequest.employee_id == employee.id,
+            LeaveRequest.tenant_id == employee.tenant_id,
+        )
+    ).scalar_one_or_none()
+    if leave_request is None or leave_request.attachment_blob is None:
+        abort(404)
+
+    download_name = leave_request.attachment_name or "adjunto-ausencia"
+    mime_type = leave_request.attachment_mime or "application/octet-stream"
+    return send_file(
+        io.BytesIO(leave_request.attachment_blob),
+        mimetype=mime_type,
+        as_attachment=True,
+        download_name=download_name,
     )
 
 
@@ -1623,6 +1755,7 @@ def leave_cancel(leave_request_id: uuid.UUID):
             "leave_policy_id": str(leave_request.leave_policy_id) if leave_request.leave_policy_id else None,
             "date_from": leave_request.date_from.isoformat(),
             "date_to": leave_request.date_to.isoformat(),
+            "reason": leave_request.reason,
             "minutes": leave_request.minutes,
             "status": leave_request.status.value,
         },

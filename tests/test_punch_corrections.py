@@ -42,6 +42,7 @@ def _create_admin_pending_correction_request(
     *,
     tenant_slug: str = "admin-tenant",
     target_approver_user_id: uuid.UUID | None = None,
+    with_attachment: bool = False,
 ) -> PunchCorrectionRequest:
     tenant = db.session.execute(select(Tenant).where(Tenant.slug == tenant_slug)).scalar_one()
     employee = Employee(
@@ -68,6 +69,9 @@ def _create_admin_pending_correction_request(
         requested_ts=datetime(2026, 2, 10, 8, 30, tzinfo=timezone.utc),
         requested_type=TimeEventType.IN,
         reason="Ajuste por error al fichar la hora de entrada.",
+        attachment_name="adjunto.pdf" if with_attachment else None,
+        attachment_mime="application/pdf" if with_attachment else None,
+        attachment_blob=b"%PDF-1.4 evidencia" if with_attachment else None,
         status=PunchCorrectionStatus.REQUESTED,
         target_approver_user_id=target_approver_user_id,
     )
@@ -86,6 +90,7 @@ def test_admin_punch_correction_approve_creates_replacement_and_supersession(adm
 
     approve = admin_only_client.post(
         f"/admin/punch-corrections/{correction_id}/approve",
+        data={"comment": "Aprobada con ajuste validado."},
         follow_redirects=True,
     )
     assert approve.status_code == 200
@@ -98,6 +103,7 @@ def test_admin_punch_correction_approve_creates_replacement_and_supersession(adm
         assert refreshed.status == PunchCorrectionStatus.APPROVED
         assert refreshed.approver_user_id is not None
         assert refreshed.applied_event_id is not None
+        assert refreshed.approver_comment == "Aprobada con ajuste validado."
 
         replacement_event = db.session.get(TimeEvent, refreshed.applied_event_id)
         assert replacement_event is not None
@@ -109,6 +115,23 @@ def test_admin_punch_correction_approve_creates_replacement_and_supersession(adm
         ).scalar_one()
         assert supersession.original_event_id == refreshed.source_event_id
         assert supersession.replacement_event_id == replacement_event.id
+
+
+def test_admin_can_download_correction_attachment(admin_only_client):
+    login_response = _login_admin(admin_only_client)
+    assert login_response.status_code == 302
+
+    with admin_only_client.application.app_context():
+        correction = _create_admin_pending_correction_request(with_attachment=True)
+        correction_id = correction.id
+
+    response = admin_only_client.get(
+        f"/admin/punch-corrections/{correction_id}/attachment",
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("application/pdf")
+    assert response.data.startswith(b"%PDF-1.4")
 
 
 def test_admin_punch_correction_reject_keeps_original_event(admin_only_client):
