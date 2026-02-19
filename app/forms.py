@@ -10,7 +10,7 @@ from wtforms.validators import DataRequired, Email, Length, NumberRange, Optiona
 
 
 class LoginForm(FlaskForm):
-    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)], filters=[lambda value: value.strip() if value else value])
     password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=255)])
     remember = BooleanField("Remember me")
     submit = SubmitField("Sign in")
@@ -37,6 +37,26 @@ class EmployeeEditForm(FlaskForm):
     assignment_shift_id = SelectField("Asignar turno", choices=[], validators=[Optional()], default="", coerce=str)
     assignment_effective_from = DateField("Aplicar desde", validators=[Optional()], default=date.today)
     submit = SubmitField("Guardar cambios")
+
+
+class UserCreateForm(FlaskForm):
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=255)], filters=[lambda value: value.strip() if value else value])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=255)])
+    confirm_password = PasswordField("Confirm password", validators=[DataRequired(), Length(min=8, max=255)])
+    role = SelectField(
+        "Role",
+        choices=[
+            ("OWNER", "Owner"),
+            ("ADMIN", "Admin"),
+            ("MANAGER", "Manager"),
+            ("EMPLOYEE", "Employee"),
+        ],
+        validators=[DataRequired()],
+        default="EMPLOYEE",
+    )
+    employee_id = SelectField("Employee", choices=[], validators=[Optional()], coerce=str)
+    active = BooleanField("Active", default=True)
+    submit = SubmitField("Create user")
 
 
 class LeaveRequestForm(FlaskForm):
