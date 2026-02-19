@@ -107,6 +107,20 @@ Important:
 
 ## Permisos y bolsas (MVP)
 
+### Matriz de autorizacion (rol vs accion)
+
+| Accion | OWNER | ADMIN | MANAGER | EMPLOYEE | AGENCY |
+| --- | --- | --- | --- | --- | --- |
+| Gestionar usuarios (`/admin/users`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Gestionar empleados (`/admin/employees`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Gestionar turnos (`/admin/turnos`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Aprobar/rechazar permisos (`/admin/approvals`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Exportar nomina (`/admin/reports/payroll`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Ver ajustes (`/admin/adjustments`) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Fichajes manuales propios (`/me/incidents/manual`) | ❌ | ❌ | ❌ | ✅* | ❌ |
+
+\* Requiere membresia vinculada a un perfil de empleado activo del tenant.
+
 Flujo funcional implementado para vacaciones/permisos:
 
 - Estados permitidos: `REQUESTED -> APPROVED | REJECTED | CANCELLED`.

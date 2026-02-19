@@ -14,6 +14,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
+from app.authorization import employee_self_service_required, manual_punch_required
 from app.extensions import db
 from app.forms import LeaveRequestForm
 from app.models import (
@@ -597,6 +598,7 @@ def _render_punch_state(employee: Employee):
 @bp.get("/me/today")
 @login_required
 @tenant_required
+@employee_self_service_required
 def me_today():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
@@ -625,6 +627,7 @@ def me_today():
 @bp.post("/me/pause/toggle")
 @login_required
 @tenant_required
+@employee_self_service_required
 def toggle_pause():
     employee = _employee_for_current_user()
     events = _todays_events(employee.id)
@@ -657,6 +660,7 @@ def toggle_pause():
 @bp.post("/me/punch/<string:action>")
 @login_required
 @tenant_required
+@employee_self_service_required
 def punch_action(action: str):
     event_type = ACTION_MAP.get(action)
     if event_type is None:
@@ -702,6 +706,7 @@ def punch_action(action: str):
 @bp.get("/me/events")
 @login_required
 @tenant_required
+@employee_self_service_required
 def me_events():
     employee = _employee_for_current_user()
     stmt = select(TimeEvent).where(TimeEvent.employee_id == employee.id).order_by(TimeEvent.ts.desc()).limit(100)
@@ -712,6 +717,7 @@ def me_events():
 @bp.post("/me/incidents/manual")
 @login_required
 @tenant_required
+@manual_punch_required
 def create_manual_punch():
     employee = _employee_for_current_user()
     requested_date = request.form.get("manual_date", "")
@@ -763,6 +769,7 @@ def create_manual_punch():
 @bp.get("/me/presence-control")
 @login_required
 @tenant_required
+@employee_self_service_required
 def presence_control():
     employee = _employee_for_current_user()
     requested_month = request.args.get("month")
@@ -892,6 +899,7 @@ def presence_control():
 @bp.get("/me/pause-control")
 @login_required
 @tenant_required
+@employee_self_service_required
 def pause_control():
     employee = _employee_for_current_user()
     requested_month = request.args.get("month")
@@ -1002,6 +1010,7 @@ def pause_control():
 @bp.route("/me/leaves", methods=["GET", "POST"])
 @login_required
 @tenant_required
+@employee_self_service_required
 def me_leaves():
     employee = _employee_for_current_user()
     form = LeaveRequestForm()
@@ -1111,6 +1120,7 @@ def me_leaves():
 @bp.post("/me/leaves/<uuid:leave_request_id>/cancel")
 @login_required
 @tenant_required
+@employee_self_service_required
 def leave_cancel(leave_request_id: uuid.UUID):
     employee = _employee_for_current_user()
     leave_request = db.session.execute(

@@ -14,6 +14,14 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.audit import log_audit
+from app.authorization import (
+    approve_leaves_required,
+    export_payroll_required,
+    manage_employees_required,
+    manage_shifts_required,
+    manage_users_required,
+    view_adjustments_required,
+)
 from app.extensions import db
 from app.forms import (
     AdminResetPasswordForm,
@@ -41,12 +49,11 @@ from app.models import (
     TimeEvent,
 )
 from app.security import hash_secret
-from app.tenant import get_active_tenant_id, roles_required, tenant_required
+from app.tenant import get_active_tenant_id, tenant_required
 
 
 bp = Blueprint("admin", __name__)
 
-ADMIN_ROLES = {MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER}
 SHIFT_FREQUENCY_LABELS = {
     ExpectedHoursFrequency.YEARLY: "Anuales",
     ExpectedHoursFrequency.MONTHLY: "Mensuales",
@@ -394,7 +401,7 @@ def _would_remove_last_admin_access(tenant_id: UUID, target_user_id: UUID, new_r
 @bp.get("/admin/users")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_users_required
 def users_list():
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -415,7 +422,7 @@ def users_list():
 @bp.route("/admin/users/new", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_users_required
 def users_new():
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -491,7 +498,7 @@ def users_new():
 @bp.route("/admin/users/<uuid:user_id>/edit", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_users_required
 def users_edit(user_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -604,7 +611,7 @@ def users_edit(user_id: UUID):
 @bp.route("/admin/users/<uuid:user_id>/reset-password", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_users_required
 def users_reset_password(user_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -645,7 +652,7 @@ def users_reset_password(user_id: UUID):
 @bp.get("/admin/employees")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_list():
     employees = list(db.session.execute(select(Employee).order_by(Employee.name.asc())).scalars().all())
     active_employees = [employee for employee in employees if employee.active]
@@ -674,7 +681,7 @@ def employees_list():
 @bp.route("/admin/employees/new", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_new():
     form = EmployeeCreateForm()
     if form.validate_on_submit():
@@ -706,7 +713,7 @@ def employees_new():
 @bp.route("/admin/employees/<uuid:employee_id>/edit", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def employees_edit(employee_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -888,7 +895,7 @@ def employees_edit(employee_id: UUID):
 @bp.get("/admin/team-today")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_employees_required
 def team_today():
     return redirect(url_for("admin.shifts"))
 
@@ -896,7 +903,7 @@ def team_today():
 @bp.get("/admin/turnos")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts():
     return _render_turnos()
 
@@ -919,7 +926,7 @@ def _render_turnos():
 @bp.route("/admin/turnos/new", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts_new():
     form = ShiftCreateForm()
     policy_default_valid_from, policy_default_valid_to = _policy_default_dates()
@@ -1029,7 +1036,7 @@ def shifts_new():
 @bp.route("/admin/turnos/<uuid:shift_id>/edit", methods=["GET", "POST"])
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@manage_shifts_required
 def shifts_edit(shift_id: UUID):
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -1189,7 +1196,7 @@ def shifts_edit(shift_id: UUID):
 @bp.get("/admin/approvals")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approvals():
     tenant_id = get_active_tenant_id()
     if tenant_id is None:
@@ -1254,7 +1261,7 @@ def _decide_leave(leave_request_id: UUID, status: LeaveRequestStatus):
 @bp.post("/admin/approvals/<uuid:leave_request_id>/approve")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approval_approve(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.APPROVED)
 
@@ -1262,7 +1269,7 @@ def approval_approve(leave_request_id: UUID):
 @bp.post("/admin/approvals/<uuid:leave_request_id>/reject")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@approve_leaves_required
 def approval_reject(leave_request_id: UUID):
     return _decide_leave(leave_request_id, LeaveRequestStatus.REJECTED)
 
@@ -1270,7 +1277,7 @@ def approval_reject(leave_request_id: UUID):
 @bp.get("/admin/reports/payroll")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@export_payroll_required
 def payroll_report():
     form = DateRangeExportForm()
     return render_template("admin/payroll.html", form=form)
@@ -1279,7 +1286,7 @@ def payroll_report():
 @bp.post("/admin/reports/payroll/export")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@export_payroll_required
 def payroll_export():
     form = DateRangeExportForm()
     if not form.validate_on_submit():
@@ -1311,7 +1318,7 @@ def payroll_export():
 @bp.get("/admin/adjustments")
 @login_required
 @tenant_required
-@roles_required(ADMIN_ROLES)
+@view_adjustments_required
 def adjustments_stub():
     rows = list(
         db.session.execute(select(TimeAdjustment).order_by(TimeAdjustment.created_at.desc()).limit(20)).scalars().all()
