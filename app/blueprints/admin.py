@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import csv
 from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, time, timedelta, timezone
 import io
+import secrets
+import string
+from urllib.parse import urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, flash, make_response, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from email_validator import EmailNotValidError, validate_email
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
 from app.audit import log_audit
 from app.authorization import (
@@ -27,6 +32,8 @@ from app.extensions import db
 from app.forms import (
     AdminResetPasswordForm,
     AttendanceReportForm,
+    BulkEmployeeImportForm,
+    BulkImportCommitForm,
     EmployeeCreateForm,
     EmployeeEditForm,
     ShiftCreateForm,
@@ -37,6 +44,8 @@ from app.models import (
     Employee,
     EmployeeShiftAssignment,
     ExpectedHoursFrequency,
+    ImportJob,
+    ImportJobStatus,
     LeavePolicyUnit,
     PunchCorrectionRequest,
     PunchCorrectionStatus,
@@ -48,6 +57,7 @@ from app.models import (
     Shift,
     User,
     ShiftLeavePolicy,
+    Tenant,
     TimeAdjustment,
     TimeEvent,
     TimeEventSource,
@@ -97,6 +107,34 @@ REPORT_FORMAT_EXTENSIONS = {
     "json": "json",
     "xlsx": "xlsx",
     "pdf": "pdf",
+}
+IMPORT_PREVIEW_TTL_HOURS = 24
+IMPORT_ALLOWED_HEADERS = {"name", "email", "active", "shift_name", "create_user", "role"}
+IMPORT_REQUIRED_HEADERS = {"name"}
+IMPORT_BOOLEAN_TRUE_VALUES = {"1", "true", "t", "yes", "y", "si", "s"}
+IMPORT_BOOLEAN_FALSE_VALUES = {"0", "false", "f", "no", "n"}
+SHIFT_TEMPLATE_PRESETS = {
+    "oficina-8h": {
+        "name": "Oficina 8h",
+        "break_counts_as_worked_bool": False,
+        "break_minutes": 60,
+        "expected_hours": Decimal("8.00"),
+        "expected_hours_frequency": ExpectedHoursFrequency.DAILY,
+    },
+    "comercio-partido": {
+        "name": "Comercio partido",
+        "break_counts_as_worked_bool": False,
+        "break_minutes": 120,
+        "expected_hours": Decimal("8.00"),
+        "expected_hours_frequency": ExpectedHoursFrequency.DAILY,
+    },
+    "media-jornada": {
+        "name": "Media jornada",
+        "break_counts_as_worked_bool": True,
+        "break_minutes": 30,
+        "expected_hours": Decimal("4.00"),
+        "expected_hours_frequency": ExpectedHoursFrequency.DAILY,
+    },
 }
 
 
@@ -637,6 +675,475 @@ def _report_download_filename(
     return f"{report_type}_report_{date_from.isoformat()}_{date_to.isoformat()}{employee_suffix}.{ext}"
 
 
+def _safe_next_path(next_path: str | None, fallback_endpoint: str) -> str:
+    raw_next = (next_path or "").strip()
+    if not raw_next:
+        return url_for(fallback_endpoint)
+    parsed = urlparse(raw_next)
+    if parsed.scheme or parsed.netloc:
+        return url_for(fallback_endpoint)
+    if not raw_next.startswith("/") or raw_next.startswith("//"):
+        return url_for(fallback_endpoint)
+    return raw_next
+
+
+def _current_actor_user_id() -> UUID | None:
+    try:
+        return UUID(current_user.get_id())
+    except (TypeError, ValueError):
+        return None
+
+
+def _generate_temporary_password(length: int = 14) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(max(12, length)))
+
+
+def _add_import_preview_error(error_map: dict[int, list[str]], row_number: int, message: str) -> None:
+    error_map.setdefault(row_number, []).append(message)
+
+
+def _parse_import_bool(
+    raw_value: str,
+    *,
+    default: bool,
+    row_number: int,
+    field_name: str,
+    error_map: dict[int, list[str]],
+) -> bool:
+    normalized = raw_value.strip().lower()
+    if not normalized:
+        return default
+    if normalized in IMPORT_BOOLEAN_TRUE_VALUES:
+        return True
+    if normalized in IMPORT_BOOLEAN_FALSE_VALUES:
+        return False
+    _add_import_preview_error(error_map, row_number, f"Valor invalido para '{field_name}'. Usa true/false.")
+    return default
+
+
+def _tenant_shift_by_name(tenant_id: UUID) -> dict[str, Shift]:
+    shifts = list(db.session.execute(select(Shift).where(Shift.tenant_id == tenant_id)).scalars().all())
+    return {shift.name.strip().lower(): shift for shift in shifts}
+
+
+def _build_import_preview(
+    tenant_id: UUID,
+    *,
+    filename: str,
+    payload: bytes,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], dict[str, int], str]:
+    if not payload:
+        raise ValueError("El archivo CSV esta vacio.")
+
+    decoded_csv: str | None = None
+    decode_errors: list[Exception] = []
+    for encoding in ("utf-8-sig", "utf-8"):
+        try:
+            decoded_csv = payload.decode(encoding)
+            break
+        except UnicodeDecodeError as exc:
+            decode_errors.append(exc)
+    if decoded_csv is None:
+        raise ValueError("No se pudo leer el CSV. Usa codificacion UTF-8.") from decode_errors[-1]
+    if not decoded_csv.strip():
+        raise ValueError("El archivo CSV esta vacio.")
+
+    reader = csv.DictReader(io.StringIO(decoded_csv))
+    if reader.fieldnames is None:
+        raise ValueError("CSV invalido: faltan encabezados.")
+
+    header_map: dict[str, str] = {}
+    for header in reader.fieldnames:
+        normalized = (header or "").strip().lower()
+        if not normalized:
+            continue
+        header_map.setdefault(normalized, header)
+
+    missing_headers = IMPORT_REQUIRED_HEADERS - set(header_map.keys())
+    if missing_headers:
+        raise ValueError("El CSV debe incluir la columna obligatoria 'name'.")
+
+    shift_by_name = _tenant_shift_by_name(tenant_id)
+    rows: list[dict[str, object]] = []
+    error_map: dict[int, list[str]] = {}
+
+    for row_number, csv_row in enumerate(reader, start=2):
+        def _raw_value(field_name: str) -> str:
+            key = header_map.get(field_name)
+            if key is None:
+                return ""
+            return (csv_row.get(key, "") or "").strip()
+
+        name = _raw_value("name")
+        email_raw = _raw_value("email").lower()
+        active_raw = _raw_value("active")
+        shift_name = _raw_value("shift_name")
+        create_user_raw = _raw_value("create_user")
+        role_raw = _raw_value("role").upper()
+
+        create_user = _parse_import_bool(
+            create_user_raw,
+            default=False,
+            row_number=row_number,
+            field_name="create_user",
+            error_map=error_map,
+        )
+        active = _parse_import_bool(
+            active_raw,
+            default=True,
+            row_number=row_number,
+            field_name="active",
+            error_map=error_map,
+        )
+
+        if not name:
+            _add_import_preview_error(error_map, row_number, "El nombre es obligatorio.")
+
+        email: str | None = None
+        if email_raw:
+            try:
+                parsed_email = validate_email(email_raw, check_deliverability=False)
+            except EmailNotValidError:
+                _add_import_preview_error(error_map, row_number, "Email invalido.")
+            else:
+                email = parsed_email.normalized.lower()
+
+        shift_id: str | None = None
+        if shift_name:
+            shift = shift_by_name.get(shift_name.lower())
+            if shift is None:
+                _add_import_preview_error(error_map, row_number, "El turno indicado no existe en este tenant.")
+            else:
+                shift_id = str(shift.id)
+
+        role = role_raw
+        if create_user and not role:
+            role = MembershipRole.EMPLOYEE.value
+        if create_user and role != MembershipRole.EMPLOYEE.value:
+            _add_import_preview_error(error_map, row_number, "Solo se admite rol EMPLOYEE en importacion masiva.")
+        if not create_user:
+            role = ""
+        if create_user and not email:
+            _add_import_preview_error(error_map, row_number, "Para crear usuario debes indicar un email valido.")
+
+        rows.append(
+            {
+                "row_number": row_number,
+                "name": name,
+                "email": email,
+                "active": active,
+                "shift_name": shift_name or None,
+                "shift_id": shift_id,
+                "create_user": create_user,
+                "role": role or None,
+            }
+        )
+
+    if not rows:
+        raise ValueError("El CSV no contiene filas para procesar.")
+
+    emails_by_row_number: dict[int, str] = {}
+    email_rows: dict[str, list[int]] = {}
+    for row in rows:
+        email = row.get("email")
+        if not isinstance(email, str) or not email:
+            continue
+        row_number = int(row["row_number"])
+        emails_by_row_number[row_number] = email
+        email_rows.setdefault(email, []).append(row_number)
+
+    for row_numbers in email_rows.values():
+        if len(row_numbers) <= 1:
+            continue
+        for row_number in row_numbers:
+            _add_import_preview_error(error_map, row_number, "Email duplicado en el mismo CSV.")
+
+    all_emails = sorted(set(email_rows.keys()))
+    if all_emails:
+        existing_employee_emails = {
+            email.lower()
+            for email in db.session.execute(
+                select(Employee.email).where(Employee.tenant_id == tenant_id, Employee.email.in_(all_emails))
+            )
+            .scalars()
+            .all()
+            if email
+        }
+        for row_number, email in emails_by_row_number.items():
+            if email in existing_employee_emails:
+                _add_import_preview_error(error_map, row_number, "Ya existe un empleado con ese email en el tenant.")
+
+    create_user_emails = sorted(
+        {
+            str(row["email"])
+            for row in rows
+            if bool(row.get("create_user")) and isinstance(row.get("email"), str) and row.get("email")
+        }
+    )
+    if create_user_emails:
+        tenant_existing_user_emails = {
+            email.lower()
+            for email in db.session.execute(
+                select(User.email)
+                .join(Membership, Membership.user_id == User.id)
+                .where(Membership.tenant_id == tenant_id, User.email.in_(create_user_emails))
+            )
+            .scalars()
+            .all()
+            if email
+        }
+        global_existing_user_emails = {
+            email.lower()
+            for email in db.session.execute(select(User.email).where(User.email.in_(create_user_emails))).scalars().all()
+            if email
+        }
+        for row in rows:
+            if not bool(row.get("create_user")):
+                continue
+            email = row.get("email")
+            if not isinstance(email, str) or not email:
+                continue
+            row_number = int(row["row_number"])
+            if email in tenant_existing_user_emails:
+                _add_import_preview_error(error_map, row_number, "Ya existe un usuario con ese email en el tenant.")
+            elif email in global_existing_user_emails:
+                _add_import_preview_error(error_map, row_number, "Ya existe un usuario con ese email.")
+
+    errors: list[dict[str, object]] = []
+    for row_number in sorted(error_map.keys()):
+        for message in error_map[row_number]:
+            errors.append({"row_number": row_number, "message": message})
+
+    invalid_row_numbers = set(error_map.keys())
+    summary = {
+        "total": len(rows),
+        "valid": len(rows) - len(invalid_row_numbers),
+        "invalid": len(invalid_row_numbers),
+    }
+    normalized_filename = filename.strip() or "empleados.csv"
+    return rows, errors, summary, normalized_filename
+
+
+def _invalid_import_row_numbers(errors: list[dict[str, object]]) -> set[int]:
+    row_numbers: set[int] = set()
+    for error in errors:
+        try:
+            row_numbers.add(int(error.get("row_number", 0)))
+        except (TypeError, ValueError):
+            continue
+    return row_numbers
+
+
+def _valid_import_rows(import_job: ImportJob) -> list[dict[str, object]]:
+    invalid_row_numbers = _invalid_import_row_numbers(import_job.errors_json or [])
+    valid_rows: list[dict[str, object]] = []
+    for row in import_job.rows_json or []:
+        try:
+            row_number = int(row.get("row_number", 0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if row_number in invalid_row_numbers:
+            continue
+        valid_rows.append(row)
+    return valid_rows
+
+
+def _commit_import_job(import_job: ImportJob, tenant_id: UUID) -> tuple[dict[str, int], list[list[str]]]:
+    valid_rows = _valid_import_rows(import_job)
+    if not valid_rows:
+        raise ValueError("No hay filas validas para confirmar.")
+
+    shifts_by_id: dict[UUID, Shift] = {}
+    shift_ids: set[UUID] = set()
+    for row in valid_rows:
+        shift_id_raw = row.get("shift_id")
+        if not isinstance(shift_id_raw, str) or not shift_id_raw:
+            continue
+        shift_ids.add(UUID(shift_id_raw))
+    if shift_ids:
+        shifts = list(
+            db.session.execute(select(Shift).where(Shift.tenant_id == tenant_id, Shift.id.in_(tuple(shift_ids))))
+            .scalars()
+            .all()
+        )
+        shifts_by_id = {shift.id: shift for shift in shifts}
+
+    credentials_rows: list[list[str]] = []
+    committed_employees = 0
+    committed_users = 0
+    today = date.today()
+
+    for row in valid_rows:
+        employee = Employee(
+            tenant_id=tenant_id,
+            name=str(row.get("name", "")).strip(),
+            email=(str(row["email"]).strip().lower() if isinstance(row.get("email"), str) and row.get("email") else None),
+            active=bool(row.get("active", True)),
+        )
+        db.session.add(employee)
+        db.session.flush()
+        committed_employees += 1
+
+        shift_id_raw = row.get("shift_id")
+        if isinstance(shift_id_raw, str) and shift_id_raw:
+            parsed_shift_id = UUID(shift_id_raw)
+            selected_shift = shifts_by_id.get(parsed_shift_id)
+            if selected_shift is None:
+                raise LookupError("El turno vinculado en preview ya no existe.")
+            db.session.add(
+                EmployeeShiftAssignment(
+                    tenant_id=tenant_id,
+                    employee_id=employee.id,
+                    shift_id=selected_shift.id,
+                    effective_from=today,
+                    effective_to=None,
+                )
+            )
+
+        create_user = bool(row.get("create_user"))
+        role_value = row.get("role")
+        if create_user:
+            if role_value != MembershipRole.EMPLOYEE.value:
+                raise ValueError("La importacion solo admite usuarios EMPLOYEE.")
+            email_value = row.get("email")
+            if not isinstance(email_value, str) or not email_value:
+                raise ValueError("No se puede crear usuario sin email.")
+
+            temporary_password = _generate_temporary_password()
+            user = User(
+                email=email_value.lower(),
+                password_hash=hash_secret(temporary_password),
+                is_active=True,
+                must_change_password=True,
+            )
+            db.session.add(user)
+            db.session.flush()
+
+            membership = Membership(
+                tenant_id=tenant_id,
+                user_id=user.id,
+                role=MembershipRole.EMPLOYEE,
+                employee_id=employee.id,
+            )
+            db.session.add(membership)
+
+            committed_users += 1
+            credentials_rows.append([user.email, temporary_password, employee.name])
+            log_audit(
+                action="BULK_USER_CREATED",
+                entity_type="users",
+                entity_id=user.id,
+                payload={
+                    "import_job_id": str(import_job.id),
+                    "employee_id": str(employee.id),
+                    "email": user.email,
+                    "role": MembershipRole.EMPLOYEE.value,
+                },
+            )
+
+    import_job.status = ImportJobStatus.COMMITTED
+    import_job.committed_at = datetime.now(timezone.utc)
+    import_job.summary_json = {
+        **(import_job.summary_json or {}),
+        "committed_employees": committed_employees,
+        "committed_users": committed_users,
+    }
+
+    log_audit(
+        action="BULK_IMPORT_COMMITTED",
+        entity_type="import_jobs",
+        entity_id=import_job.id,
+        payload={
+            "filename": import_job.filename,
+            "total": int((import_job.summary_json or {}).get("total", 0)),
+            "valid": int((import_job.summary_json or {}).get("valid", 0)),
+            "invalid": int((import_job.summary_json or {}).get("invalid", 0)),
+            "committed_employees": committed_employees,
+            "committed_users": committed_users,
+        },
+    )
+
+    return {"employees": committed_employees, "users": committed_users}, credentials_rows
+
+
+def _refresh_import_job_status(import_job: ImportJob) -> bool:
+    if import_job.status is not ImportJobStatus.PREVIEWED:
+        return False
+    if _as_utc(import_job.expires_at) > datetime.now(timezone.utc):
+        return False
+    import_job.status = ImportJobStatus.EXPIRED
+    return True
+
+
+def _team_health_counts(tenant_id: UUID) -> dict[str, int]:
+    employees = list(db.session.execute(select(Employee).where(Employee.tenant_id == tenant_id)).scalars().all())
+    employee_ids = [employee.id for employee in employees]
+    active_employee_ids = [employee.id for employee in employees if employee.active]
+
+    linked_employee_ids = {
+        employee_id
+        for employee_id in db.session.execute(
+            select(Membership.employee_id).where(Membership.tenant_id == tenant_id, Membership.employee_id.is_not(None))
+        )
+        .scalars()
+        .all()
+        if employee_id is not None
+    }
+
+    employee_users_without_link = int(
+        db.session.execute(
+            select(func.count(Membership.id)).where(
+                Membership.tenant_id == tenant_id,
+                Membership.role == MembershipRole.EMPLOYEE,
+                Membership.employee_id.is_(None),
+            )
+        ).scalar_one()
+    )
+
+    recent_events_since = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_event_employee_ids = {
+        employee_id
+        for employee_id in db.session.execute(
+            select(TimeEvent.employee_id).where(TimeEvent.tenant_id == tenant_id, TimeEvent.ts >= recent_events_since)
+        )
+        .scalars()
+        .all()
+    }
+
+    current_shift_ids: set[UUID] = set()
+    if employee_ids:
+        current_shift_ids = set(_current_shift_names_by_employee(employee_ids, date.today()).keys())
+
+    pending_corrections = int(
+        db.session.execute(
+            select(func.count(PunchCorrectionRequest.id)).where(
+                PunchCorrectionRequest.tenant_id == tenant_id,
+                PunchCorrectionRequest.status == PunchCorrectionStatus.REQUESTED,
+            )
+        ).scalar_one()
+    )
+    pending_leaves = int(
+        db.session.execute(
+            select(func.count(LeaveRequest.id)).where(
+                LeaveRequest.tenant_id == tenant_id,
+                LeaveRequest.status == LeaveRequestStatus.REQUESTED,
+            )
+        ).scalar_one()
+    )
+
+    return {
+        "employees_without_user": sum(1 for employee_id in employee_ids if employee_id not in linked_employee_ids),
+        "employee_users_without_employee": employee_users_without_link,
+        "employees_without_shift": sum(1 for employee_id in active_employee_ids if employee_id not in current_shift_ids),
+        "active_without_events_7d": sum(
+            1 for employee_id in active_employee_ids if employee_id not in recent_event_employee_ids
+        ),
+        "pending_punch_corrections": pending_corrections,
+        "pending_leave_requests": pending_leaves,
+    }
+
+
 @bp.get("/admin/users")
 @login_required
 @tenant_required
@@ -646,16 +1153,30 @@ def users_list():
     if tenant_id is None:
         abort(400, description="No active tenant selected.")
 
+    active_filter = (request.args.get("filter") or "").strip().lower()
+    filter_label = ""
+
+    stmt = (
+        select(Membership, User, Employee)
+        .join(User, User.id == Membership.user_id)
+        .outerjoin(Employee, Employee.id == Membership.employee_id)
+        .where(Membership.tenant_id == tenant_id)
+    )
+    if active_filter == "employee-without-link":
+        stmt = stmt.where(Membership.role == MembershipRole.EMPLOYEE, Membership.employee_id.is_(None))
+        filter_label = "Usuarios EMPLOYEE sin empleado vinculado"
+
     rows = list(
         db.session.execute(
-            select(Membership, User, Employee)
-            .join(User, User.id == Membership.user_id)
-            .outerjoin(Employee, Employee.id == Membership.employee_id)
-            .where(Membership.tenant_id == tenant_id)
-            .order_by(User.email.asc())
+            stmt.order_by(User.email.asc())
         ).all()
     )
-    return render_template("admin/users.html", rows=rows)
+    return render_template(
+        "admin/users.html",
+        rows=rows,
+        active_filter=active_filter if filter_label else "",
+        filter_label=filter_label,
+    )
 
 
 @bp.route("/admin/users/new", methods=["GET", "POST"])
@@ -893,27 +1414,76 @@ def users_reset_password(user_id: UUID):
 @tenant_required
 @manage_employees_required
 def employees_list():
-    employees = list(db.session.execute(select(Employee).order_by(Employee.name.asc())).scalars().all())
-    active_employees = [employee for employee in employees if employee.active]
-    inactive_employees = [employee for employee in employees if not employee.active]
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    active_filter = (request.args.get("filter") or "").strip().lower()
+    filter_label = ""
+    employees = list(
+        db.session.execute(select(Employee).where(Employee.tenant_id == tenant_id).order_by(Employee.name.asc())).scalars().all()
+    )
+    filtered_employees = employees
     current_shift_by_employee: dict[UUID, str] = {}
+    shift_lookup_available = True
     try:
         current_shift_by_employee = _current_shift_names_by_employee(
             [employee.id for employee in employees],
             date.today(),
         )
     except (OperationalError, ProgrammingError, LookupError):
+        shift_lookup_available = False
         db.session.rollback()
         current_app.logger.warning(
             "Employee shift assignment lookup failed while listing employees.",
             exc_info=True,
         )
         flash("No se pudieron cargar los turnos asignados de empleados.", "warning")
+
+    if active_filter == "without-user":
+        linked_employee_ids = {
+            employee_id
+            for employee_id in db.session.execute(
+                select(Membership.employee_id).where(Membership.tenant_id == tenant_id, Membership.employee_id.is_not(None))
+            )
+            .scalars()
+            .all()
+            if employee_id is not None
+        }
+        filtered_employees = [employee for employee in employees if employee.id not in linked_employee_ids]
+        filter_label = "Empleados sin usuario vinculado"
+    elif active_filter == "without-shift":
+        if shift_lookup_available:
+            filtered_employees = [employee for employee in employees if employee.active and employee.id not in current_shift_by_employee]
+            filter_label = "Empleados activos sin turno asignado"
+        else:
+            flash("No se pudo aplicar el filtro de turnos por falta de datos.", "warning")
+    elif active_filter == "without-events-7d":
+        since = datetime.now(timezone.utc) - timedelta(days=7)
+        recent_event_employee_ids = {
+            employee_id
+            for employee_id in db.session.execute(
+                select(TimeEvent.employee_id).where(TimeEvent.tenant_id == tenant_id, TimeEvent.ts >= since)
+            )
+            .scalars()
+            .all()
+        }
+        filtered_employees = [
+            employee
+            for employee in employees
+            if employee.active and employee.id not in recent_event_employee_ids
+        ]
+        filter_label = "Empleados activos sin fichajes en los ultimos 7 dias"
+
+    active_employees = [employee for employee in filtered_employees if employee.active]
+    inactive_employees = [employee for employee in filtered_employees if not employee.active]
     return render_template(
         "admin/employees.html",
         active_employees=active_employees,
         inactive_employees=inactive_employees,
         current_shift_by_employee=current_shift_by_employee,
+        active_filter=active_filter if filter_label else "",
+        filter_label=filter_label,
     )
 
 
@@ -1174,7 +1744,413 @@ def employees_edit(employee_id: UUID):
 @tenant_required
 @manage_employees_required
 def team_today():
-    return redirect(url_for("admin.shifts"))
+    return redirect(url_for("admin.getting_started"))
+
+
+@bp.get("/admin/getting-started")
+@login_required
+@tenant_required
+@manage_employees_required
+def getting_started():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    tenant = db.session.get(Tenant, tenant_id)
+    if tenant is None:
+        abort(404)
+
+    shift_count = int(db.session.execute(select(func.count(Shift.id)).where(Shift.tenant_id == tenant_id)).scalar_one())
+    active_employee_count = int(
+        db.session.execute(
+            select(func.count(Employee.id)).where(Employee.tenant_id == tenant_id, Employee.active.is_(True))
+        ).scalar_one()
+    )
+    linked_employee_user_count = int(
+        db.session.execute(
+            select(func.count(Membership.id)).where(
+                Membership.tenant_id == tenant_id,
+                Membership.role == MembershipRole.EMPLOYEE,
+                Membership.employee_id.is_not(None),
+            )
+        ).scalar_one()
+    )
+    recent_events_count = int(
+        db.session.execute(
+            select(func.count(TimeEvent.id)).where(
+                TimeEvent.tenant_id == tenant_id,
+                TimeEvent.ts >= datetime.now(timezone.utc) - timedelta(days=7),
+            )
+        ).scalar_one()
+    )
+
+    checklist = [
+        {
+            "id": "payroll_cutoff",
+            "title": "Definir corte de nomina",
+            "description": "Dia de corte mensual para reportes y operativa.",
+            "done": tenant.payroll_cutoff_day is not None and 1 <= int(tenant.payroll_cutoff_day) <= 31,
+            "value": f"Dia {tenant.payroll_cutoff_day}",
+            "action_url": url_for("admin.payroll_report"),
+            "action_label": "Ver reportes",
+        },
+        {
+            "id": "shift",
+            "title": "Crear al menos 1 turno",
+            "description": "Necesario para asignacion inicial y calculos base.",
+            "done": shift_count >= 1,
+            "value": str(shift_count),
+            "action_url": url_for("admin.import_employees"),
+            "action_label": "Crear turno rapido",
+        },
+        {
+            "id": "employee",
+            "title": "Alta de empleados activos",
+            "description": "Dar de alta plantilla para empezar a fichar.",
+            "done": active_employee_count >= 1,
+            "value": str(active_employee_count),
+            "action_url": url_for("admin.import_employees"),
+            "action_label": "Importar empleados",
+        },
+        {
+            "id": "employee_user",
+            "title": "Usuarios EMPLOYEE vinculados",
+            "description": "Al menos un usuario con empleado asociado.",
+            "done": linked_employee_user_count >= 1,
+            "value": str(linked_employee_user_count),
+            "action_url": url_for("admin.import_employees"),
+            "action_label": "Crear usuarios masivos",
+        },
+        {
+            "id": "first_event",
+            "title": "Primer fichaje en los ultimos 7 dias",
+            "description": "Valida que el circuito operativo ya esta activo.",
+            "done": recent_events_count >= 1,
+            "value": str(recent_events_count),
+            "action_url": url_for("admin.team_health"),
+            "action_label": "Revisar salud operativa",
+        },
+    ]
+
+    completed = sum(1 for item in checklist if item["done"])
+    progress = int((completed / len(checklist)) * 100) if checklist else 0
+    return render_template(
+        "admin/getting_started.html",
+        checklist=checklist,
+        completed=completed,
+        total=len(checklist),
+        progress=progress,
+        shift_template_presets=SHIFT_TEMPLATE_PRESETS,
+    )
+
+
+@bp.get("/admin/team-health")
+@login_required
+@tenant_required
+@manage_employees_required
+def team_health():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    try:
+        counts = _team_health_counts(tenant_id)
+    except (OperationalError, ProgrammingError, LookupError):
+        db.session.rollback()
+        current_app.logger.warning(
+            "Team health lookup failed due to missing schema or query error.",
+            exc_info=True,
+        )
+        flash("No se pudo cargar la salud operativa completa. Revisa migraciones pendientes.", "warning")
+        counts = {
+            "employees_without_user": 0,
+            "employee_users_without_employee": 0,
+            "employees_without_shift": 0,
+            "active_without_events_7d": 0,
+            "pending_punch_corrections": 0,
+            "pending_leave_requests": 0,
+        }
+
+    cards = [
+        {
+            "title": "Empleados sin usuario",
+            "count": counts["employees_without_user"],
+            "url": url_for("admin.employees_list", filter="without-user"),
+            "action_label": "Abrir filtro",
+        },
+        {
+            "title": "Usuarios EMPLOYEE sin empleado",
+            "count": counts["employee_users_without_employee"],
+            "url": url_for("admin.users_list", filter="employee-without-link"),
+            "action_label": "Abrir filtro",
+        },
+        {
+            "title": "Empleados activos sin turno",
+            "count": counts["employees_without_shift"],
+            "url": url_for("admin.employees_list", filter="without-shift"),
+            "action_label": "Abrir filtro",
+        },
+        {
+            "title": "Activos sin fichajes (7 dias)",
+            "count": counts["active_without_events_7d"],
+            "url": url_for("admin.employees_list", filter="without-events-7d"),
+            "action_label": "Abrir filtro",
+        },
+        {
+            "title": "Rectificaciones pendientes",
+            "count": counts["pending_punch_corrections"],
+            "url": url_for("admin.punch_corrections"),
+            "action_label": "Gestionar",
+        },
+        {
+            "title": "Permisos pendientes",
+            "count": counts["pending_leave_requests"],
+            "url": url_for("admin.approvals"),
+            "action_label": "Gestionar",
+        },
+    ]
+    return render_template("admin/team_health.html", cards=cards)
+
+
+@bp.get("/admin/import/employees")
+@login_required
+@tenant_required
+@manage_employees_required
+def import_employees():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = BulkEmployeeImportForm()
+    commit_form = BulkImportCommitForm()
+    import_job: ImportJob | None = None
+    active_preview_rows: list[dict[str, object]] = []
+    preview_errors: list[dict[str, object]] = []
+    summary: dict[str, int] = {"total": 0, "valid": 0, "invalid": 0}
+    preview_can_commit = False
+
+    raw_job_id = (request.args.get("job_id") or "").strip()
+    if raw_job_id:
+        try:
+            parsed_job_id = UUID(raw_job_id)
+        except ValueError:
+            flash("Preview de importacion invalido.", "warning")
+        else:
+            import_job = db.session.execute(
+                select(ImportJob).where(ImportJob.id == parsed_job_id, ImportJob.tenant_id == tenant_id)
+            ).scalar_one_or_none()
+            if import_job is None:
+                flash("No se encontro el preview solicitado.", "warning")
+            else:
+                if _refresh_import_job_status(import_job):
+                    db.session.commit()
+                active_preview_rows = list(import_job.rows_json or [])
+                preview_errors = list(import_job.errors_json or [])
+                summary_json = import_job.summary_json or {}
+                summary = {
+                    "total": int(summary_json.get("total", 0)),
+                    "valid": int(summary_json.get("valid", 0)),
+                    "invalid": int(summary_json.get("invalid", 0)),
+                }
+                preview_can_commit = (
+                    import_job.status is ImportJobStatus.PREVIEWED
+                    and _as_utc(import_job.expires_at) > datetime.now(timezone.utc)
+                    and summary["invalid"] == 0
+                    and summary["valid"] > 0
+                )
+                commit_form.import_job_id.data = str(import_job.id)
+
+    return render_template(
+        "admin/import_employees.html",
+        form=form,
+        commit_form=commit_form,
+        import_job=import_job,
+        preview_rows=active_preview_rows,
+        preview_errors=preview_errors,
+        summary=summary,
+        preview_can_commit=preview_can_commit,
+        shift_template_presets=SHIFT_TEMPLATE_PRESETS,
+    )
+
+
+@bp.post("/admin/import/employees/preview")
+@login_required
+@tenant_required
+@manage_employees_required
+def import_employees_preview():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = BulkEmployeeImportForm()
+    if not form.validate_on_submit():
+        flash("Debes adjuntar un archivo CSV valido.", "danger")
+        return redirect(url_for("admin.import_employees"))
+
+    upload = form.csv_file.data
+    filename = getattr(upload, "filename", "") or "empleados.csv"
+    payload = upload.read()
+
+    try:
+        rows, errors, summary, normalized_filename = _build_import_preview(tenant_id, filename=filename, payload=payload)
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        return redirect(url_for("admin.import_employees"))
+
+    import_job = ImportJob(
+        tenant_id=tenant_id,
+        created_by_user_id=_current_actor_user_id(),
+        status=ImportJobStatus.PREVIEWED,
+        filename=normalized_filename,
+        rows_json=rows,
+        errors_json=errors,
+        summary_json=summary,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=IMPORT_PREVIEW_TTL_HOURS),
+    )
+    db.session.add(import_job)
+    db.session.flush()
+
+    log_audit(
+        action="BULK_IMPORT_PREVIEWED",
+        entity_type="import_jobs",
+        entity_id=import_job.id,
+        payload={
+            "filename": normalized_filename,
+            "total": summary["total"],
+            "valid": summary["valid"],
+            "invalid": summary["invalid"],
+            "expires_at": import_job.expires_at.isoformat(),
+        },
+    )
+
+    db.session.commit()
+    if summary["invalid"] > 0:
+        flash("Preview generado con errores. Corrige el CSV antes de confirmar.", "warning")
+    else:
+        flash("Preview generado correctamente. Puedes confirmar la importacion.", "success")
+    return redirect(url_for("admin.import_employees", job_id=import_job.id))
+
+
+@bp.post("/admin/import/employees/commit")
+@login_required
+@tenant_required
+@manage_employees_required
+def import_employees_commit():
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    form = BulkImportCommitForm()
+    if not form.validate_on_submit():
+        flash("No se pudo confirmar la importacion: preview invalido.", "danger")
+        return redirect(url_for("admin.import_employees"))
+
+    import_job_id = UUID(form.import_job_id.data.strip())
+    import_job = db.session.execute(
+        select(ImportJob).where(ImportJob.id == import_job_id, ImportJob.tenant_id == tenant_id)
+    ).scalar_one_or_none()
+    if import_job is None:
+        abort(404)
+
+    if _refresh_import_job_status(import_job):
+        db.session.commit()
+        abort(409, description="El preview ha expirado y no se puede confirmar.")
+    if import_job.status is not ImportJobStatus.PREVIEWED:
+        abort(409, description="Este preview ya fue procesado y no se puede confirmar de nuevo.")
+
+    summary = import_job.summary_json or {}
+    if int(summary.get("invalid", 0)) > 0:
+        flash("No puedes confirmar un preview con filas invalidas.", "danger")
+        return redirect(url_for("admin.import_employees", job_id=import_job.id))
+    if int(summary.get("valid", 0)) <= 0:
+        flash("No hay filas validas para confirmar.", "danger")
+        return redirect(url_for("admin.import_employees", job_id=import_job.id))
+
+    try:
+        committed_summary, credentials_rows = _commit_import_job(import_job, tenant_id)
+        db.session.commit()
+    except (IntegrityError, ValueError, LookupError) as exc:
+        db.session.rollback()
+        current_app.logger.warning("Bulk import commit failed and was rolled back.", exc_info=True)
+        flash(f"No se pudo completar la importacion: {exc}", "danger")
+        return redirect(url_for("admin.import_employees", job_id=import_job.id))
+
+    if credentials_rows:
+        payload = to_csv_bytes(["email", "temporary_password", "employee_name"], credentials_rows)
+        response = make_response(payload)
+        response.headers["Content-Type"] = "text/csv; charset=utf-8"
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="credenciales_import_{datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")}.csv"'
+        )
+        return response
+
+    flash(
+        f"Importacion completada: {committed_summary['employees']} empleados y {committed_summary['users']} usuarios.",
+        "success",
+    )
+    return redirect(url_for("admin.import_employees", job_id=import_job.id))
+
+
+@bp.get("/admin/import/employees/template")
+@login_required
+@tenant_required
+@manage_employees_required
+def import_employees_template():
+    headers = ["name", "email", "active", "shift_name", "create_user", "role"]
+    rows = [
+        ["Ana Lopez", "ana.lopez@example.com", "true", "Oficina 8h", "true", "EMPLOYEE"],
+        ["Luis Perez", "luis.perez@example.com", "true", "Comercio partido", "false", ""],
+    ]
+    response = make_response(to_csv_bytes(headers, rows))
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = 'attachment; filename="plantilla_import_empleados.csv"'
+    return response
+
+
+@bp.post("/admin/turnos/template/<string:template_key>")
+@login_required
+@tenant_required
+@manage_shifts_required
+def shifts_quick_template(template_key: str):
+    tenant_id = get_active_tenant_id()
+    if tenant_id is None:
+        abort(400, description="No active tenant selected.")
+
+    template = SHIFT_TEMPLATE_PRESETS.get(template_key)
+    if template is None:
+        abort(404)
+
+    shift_name = str(template["name"])
+    existing = db.session.execute(select(Shift).where(Shift.tenant_id == tenant_id, Shift.name == shift_name)).scalar_one_or_none()
+    if existing is not None:
+        flash(f"El turno '{shift_name}' ya existe.", "warning")
+        return redirect(_safe_next_path(request.form.get("next"), "admin.shifts"))
+
+    shift = Shift(
+        tenant_id=tenant_id,
+        name=shift_name,
+        break_counts_as_worked_bool=bool(template["break_counts_as_worked_bool"]),
+        break_minutes=int(template["break_minutes"]),
+        expected_hours=Decimal(template["expected_hours"]),
+        expected_hours_frequency=template["expected_hours_frequency"],
+    )
+    db.session.add(shift)
+    db.session.flush()
+    log_audit(
+        action="SHIFT_TEMPLATE_CREATED",
+        entity_type="shifts",
+        entity_id=shift.id,
+        payload={
+            "template_key": template_key,
+            "name": shift.name,
+            "break_minutes": shift.break_minutes,
+            "expected_hours": str(shift.expected_hours),
+            "expected_hours_frequency": _enum_value(shift.expected_hours_frequency),
+        },
+    )
+    db.session.commit()
+    flash(f"Turno '{shift.name}' creado desde plantilla.", "success")
+    return redirect(_safe_next_path(request.form.get("next"), "admin.shifts"))
 
 
 @bp.get("/admin/turnos")

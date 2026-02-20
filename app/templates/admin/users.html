@@ -4,6 +4,9 @@
   <section class="card">
     {% include "admin/_sections.html" %}
     <h1>Users</h1>
+    {% if filter_label %}
+      <p class="muted">Filtro activo: <strong>{{ filter_label }}</strong> · <a href="{{ url_for('admin.users_list') }}">Limpiar</a></p>
+    {% endif %}
     <p><a href="{{ url_for('admin.users_new') }}">Create user</a></p>
     <table>
       <thead>

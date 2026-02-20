@@ -98,3 +98,10 @@ DROP POLICY IF EXISTS audit_log_tenant_isolation ON audit_log;
 CREATE POLICY audit_log_tenant_isolation ON audit_log
 USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
 WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+
+ALTER TABLE import_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_jobs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS import_jobs_tenant_isolation ON import_jobs;
+CREATE POLICY import_jobs_tenant_isolation ON import_jobs
+USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);

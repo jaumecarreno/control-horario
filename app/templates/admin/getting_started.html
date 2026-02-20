@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Inicio rapido</h1>
+    <p class="muted">Activa el tenant en pocos pasos y llega al primer valor operativo.</p>
+
+    <p><strong>Progreso:</strong> {{ completed }}/{{ total }} ({{ progress }}%)</p>
+    <div style="background:#eef2f7;border-radius:999px;overflow:hidden;height:10px;margin-bottom:1rem;">
+      <div style="height:100%;width:{{ progress }}%;background:#1f6feb;"></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Paso</th>
+          <th>Estado</th>
+          <th>Valor</th>
+          <th>Accion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in checklist %}
+          <tr>
+            <td>
+              <strong>{{ item.title }}</strong>
+              <div class="muted" style="font-size:.9rem;">{{ item.description }}</div>
+            </td>
+            <td>{{ "Completo" if item.done else "Pendiente" }}</td>
+            <td>{{ item.value }}</td>
+            <td><a href="{{ item.action_url }}">{{ item.action_label }}</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2 style="margin-top:0;">Turnos rapidos</h2>
+    <p class="muted">Crea un turno en un clic para arrancar la operativa.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;">
+      {% for template_key, preset in shift_template_presets.items() %}
+        <form method="post" action="{{ url_for('admin.shifts_quick_template', template_key=template_key) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('admin.getting_started') }}">
+          <button type="submit">{{ preset.name }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

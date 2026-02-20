@@ -222,3 +222,19 @@ class ShiftCreateForm(FlaskForm):
         default="DAILY",
     )
     submit = SubmitField("Crear turno")
+
+
+class BulkEmployeeImportForm(FlaskForm):
+    csv_file = FileField("CSV de empleados", validators=[DataRequired()])
+    submit = SubmitField("Validar CSV")
+
+
+class BulkImportCommitForm(FlaskForm):
+    import_job_id = StringField("Import job id", validators=[DataRequired(), Length(max=64)])
+    submit = SubmitField("Confirmar importacion")
+
+    def validate_import_job_id(self, field: StringField) -> None:
+        try:
+            UUID((field.data or "").strip())
+        except ValueError as exc:
+            raise ValidationError("Import job invalido.") from exc

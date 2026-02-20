@@ -116,6 +116,36 @@ def test_payroll_export_requires_export_permission(client, role_access_context):
     )
 
 
+def test_getting_started_requires_admin_permissions(client, role_access_context):
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="GET",
+        path="/admin/getting-started",
+        allowed_roles={MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER},
+    )
+
+
+def test_import_employees_requires_admin_permissions(client, role_access_context):
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="GET",
+        path="/admin/import/employees",
+        allowed_roles={MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER},
+    )
+
+
+def test_team_health_requires_admin_permissions(client, role_access_context):
+    _expect_access_for_roles(
+        client,
+        role_access_context,
+        method="GET",
+        path="/admin/team-health",
+        allowed_roles={MembershipRole.OWNER, MembershipRole.ADMIN, MembershipRole.MANAGER},
+    )
+
+
 def test_manual_punch_requires_employee_profile(client, role_access_context):
     data = {
         "manual_date": "2026-02-10",

@@ -88,6 +88,12 @@ class ExpectedHoursFrequency(str, enum.Enum):
 ShiftPeriod = ExpectedHoursFrequency
 
 
+class ImportJobStatus(str, enum.Enum):
+    PREVIEWED = "PREVIEWED"
+    COMMITTED = "COMMITTED"
+    EXPIRED = "EXPIRED"
+
+
 class Tenant(db.Model):
     __tablename__ = "tenants"
 
@@ -391,3 +397,29 @@ class AuditLog(db.Model):
     entity_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)
+
+
+class ImportJob(db.Model):
+    __tablename__ = "import_jobs"
+    __table_args__ = (
+        Index("ix_import_jobs_tenant_status", "tenant_id", "status"),
+        Index("ix_import_jobs_tenant_expires", "tenant_id", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[ImportJobStatus] = mapped_column(
+        Enum(ImportJobStatus, name="import_job_status"),
+        nullable=False,
+        default=ImportJobStatus.PREVIEWED,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    rows_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    errors_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_utc)

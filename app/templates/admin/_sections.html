@@ -1,5 +1,8 @@
 {% set endpoint = request.endpoint or '' %}
 <nav class="inline" style="margin-bottom: 1rem;">
+  <a class="{{ 'is-active' if endpoint.startswith('admin.getting_started') else '' }}" href="{{ url_for('admin.getting_started') }}">Inicio rapido</a>
+  <a class="{{ 'is-active' if endpoint.startswith('admin.import_employees') else '' }}" href="{{ url_for('admin.import_employees') }}">Importar</a>
+  <a class="{{ 'is-active' if endpoint.startswith('admin.team_health') else '' }}" href="{{ url_for('admin.team_health') }}">Salud</a>
   <a class="{{ 'is-active' if endpoint.startswith('admin.employees') else '' }}" href="{{ url_for('admin.employees_list') }}">Employees</a>
   <a class="{{ 'is-active' if endpoint.startswith('admin.users') else '' }}" href="{{ url_for('admin.users_list') }}">Users</a>
   <a class="{{ 'is-active' if endpoint.startswith('admin.shifts') else '' }}" href="{{ url_for('admin.shifts') }}">Turnos</a>

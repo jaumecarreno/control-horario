@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Salud operativa</h1>
+    <p class="muted">Indicadores accionables para cerrar huecos de onboarding y operacion diaria.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.75rem;">
+      {% for card in cards %}
+        <article style="border:1px solid #d0d7de;border-radius:8px;padding:.9rem;">
+          <h2 style="margin:.1rem 0 .5rem;font-size:1rem;">{{ card.title }}</h2>
+          <div style="font-size:1.7rem;font-weight:700;line-height:1;">{{ card.count }}</div>
+          <p style="margin:.6rem 0 0;"><a href="{{ card.url }}">{{ card.action_label }}</a></p>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

@@ -138,6 +138,12 @@ def create_app(config_object: type[Config] = Config) -> Flask:
         if endpoint.startswith("employee."):
             back_url = url_for("employee.me_leaves")
             back_label = "Volver a Vacaciones y permisos"
+        elif endpoint.startswith("admin.import_employees") or endpoint.startswith("admin.shifts_quick_template"):
+            back_url = url_for("admin.import_employees")
+            back_label = "Volver a Importar empleados"
+        elif endpoint.startswith("admin.team_health") or endpoint.startswith("admin.getting_started"):
+            back_url = url_for("admin.getting_started")
+            back_label = "Volver a Inicio rapido"
         elif endpoint.startswith("admin."):
             back_url = url_for("admin.approvals")
             back_label = "Volver a Solicitudes"

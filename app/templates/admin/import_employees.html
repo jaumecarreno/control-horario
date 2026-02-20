@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <section class="card">
+    {% include "admin/_sections.html" %}
+    <h1>Importar empleados</h1>
+    <p class="muted">Sube un CSV, valida en preview y confirma en una sola transaccion.</p>
+    <p><a href="{{ url_for('admin.import_employees_template') }}">Descargar plantilla CSV</a></p>
+
+    <h2 style="margin-top:0;">Turnos rapidos</h2>
+    <p class="muted">Crea turnos base para asignarlos desde el CSV.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;">
+      {% for template_key, preset in shift_template_presets.items() %}
+        <form method="post" action="{{ url_for('admin.shifts_quick_template', template_key=template_key) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('admin.import_employees') }}">
+          <button type="submit">{{ preset.name }}</button>
+        </form>
+      {% endfor %}
+    </div>
+
+    <form method="post" action="{{ url_for('admin.import_employees_preview') }}" enctype="multipart/form-data">
+      {{ form.hidden_tag() }}
+      <label for="{{ form.csv_file.id }}">Archivo CSV</label>
+      {{ form.csv_file(accept='.csv,text/csv') }}
+      {% for error in form.csv_file.errors %}
+        <div class="flash danger">{{ error }}</div>
+      {% endfor %}
+      <div style="margin-top:.8rem;">{{ form.submit() }}</div>
+    </form>
+  </section>
+
+  {% if import_job %}
+    {% set invalid_rows = preview_errors | map(attribute='row_number') | list %}
+    <section class="card">
+      <h2 style="margin-top:0;">Preview</h2>
+      <p class="muted">
+        Archivo: <strong>{{ import_job.filename }}</strong> ·
+        Estado: <strong>{{ import_job.status.value if import_job.status else '-' }}</strong> ·
+        Expira: {{ import_job.expires_at.strftime('%d/%m/%Y %H:%M') if import_job.expires_at else '-' }}
+      </p>
+      <p>
+        Total: <strong>{{ summary.total }}</strong> ·
+        Validas: <strong>{{ summary.valid }}</strong> ·
+        Invalidas: <strong>{{ summary.invalid }}</strong>
+      </p>
+
+      {% if preview_errors %}
+        <h3>Errores por fila</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Fila</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for error in preview_errors %}
+              <tr>
+                <td>{{ error.row_number }}</td>
+                <td>{{ error.message }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
+      <h3>Filas del preview</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Fila</th>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Activo</th>
+            <th>Turno</th>
+            <th>Crear usuario</th>
+            <th>Rol</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview_rows %}
+            <tr class="{{ 'employee-row-inactive' if row.row_number in invalid_rows else '' }}">
+              <td>{{ row.row_number }}</td>
+              <td>{{ row.name }}</td>
+              <td>{{ row.email or '-' }}</td>
+              <td>{{ 'Si' if row.active else 'No' }}</td>
+              <td>{{ row.shift_name or '-' }}</td>
+              <td>{{ 'Si' if row.create_user else 'No' }}</td>
+              <td>{{ row.role or '-' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      {% if preview_can_commit %}
+        <form method="post" action="{{ url_for('admin.import_employees_commit') }}" style="margin-top:1rem;">
+          {{ commit_form.hidden_tag() }}
+          {{ commit_form.import_job_id(type='hidden', value=import_job.id) }}
+          <button type="submit">Confirmar importacion</button>
+        </form>
+        <p class="muted" style="margin-top:.5rem;">
+          Si se crean usuarios, la respuesta devolvera un CSV con credenciales temporales.
+        </p>
+      {% else %}
+        <p class="muted" style="margin-top:1rem;">No se puede confirmar este preview en su estado actual.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+{% endblock %}
